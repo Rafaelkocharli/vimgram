@@ -1482,22 +1482,30 @@ func singleLine(s string) string {
 // main
 // =====================================================================
 
-func main() {
-	if err := loadEnv(".env"); err != nil {
-		if !os.IsNotExist(err) {
-			die("reading .env: %v", err)
-		}
-		die(".env not found. Copy .env.example to .env and fill TG_APP_ID/TG_APP_HASH")
-	}
+// Bundled Telegram app credentials. Can be overridden via .env (see below).
+const (
+	defaultAppID   = 31452204
+	defaultAppHash = "7be152ba05c87019d22948ae3188b8e9"
+)
 
-	appIDStr := os.Getenv("TG_APP_ID")
-	appHash := os.Getenv("TG_APP_HASH")
-	if appIDStr == "" || appHash == "" {
-		die("TG_APP_ID and TG_APP_HASH are required in .env")
-	}
-	appID, err := strconv.Atoi(appIDStr)
-	if err != nil {
-		die("TG_APP_ID must be a number: %v", err)
+func main() {
+	appID := defaultAppID
+	appHash := defaultAppHash
+
+	// .env is an optional override; silently ignore missing/unreadable file.
+	_ = loadEnv(".env")
+
+	// Only override when BOTH fields are present and non-empty
+	// (avoids mismatched id/hash pairs).
+	envID := os.Getenv("TG_APP_ID")
+	envHash := os.Getenv("TG_APP_HASH")
+	if envID != "" && envHash != "" {
+		id, err := strconv.Atoi(envID)
+		if err != nil {
+			die("TG_APP_ID must be a number: %v", err)
+		}
+		appID = id
+		appHash = envHash
 	}
 
 	rand.Seed(time.Now().UnixNano())
