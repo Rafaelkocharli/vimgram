@@ -255,11 +255,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Global ctrl+c
-		if msg.String() == "ctrl+c" {
-			m.cancel()
-			return m, tea.Quit
-		}
 		switch m.screen {
 		case screenAuth:
 			return m.updateAuth(msg)
@@ -418,6 +413,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateAuth(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "esc" {
+		m.cancel()
+		return m, tea.Quit
+	}
 	if msg.String() == "enter" {
 		if m.auth == authNeedPhone || m.auth == authNeedCode || m.auth == authNeedPassword {
 			val := strings.TrimSpace(m.authInput.Value())
@@ -783,9 +782,9 @@ func (m model) viewAuth() string {
 	b.WriteString("\n")
 	switch m.auth {
 	case authNeedPhone, authNeedCode, authNeedPassword:
-		b.WriteString(footerStyle.Render("enter — submit · ctrl+c — quit"))
+		b.WriteString(footerStyle.Render("enter — submit · esc — quit"))
 	default:
-		b.WriteString(footerStyle.Render("ctrl+c — quit"))
+		b.WriteString(footerStyle.Render("esc — quit"))
 	}
 	return b.String()
 }
