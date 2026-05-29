@@ -661,7 +661,8 @@ func (m *model) visibleRows() int {
 	return v
 }
 
-// visibleMessages — сколько сообщений (по 1 строке каждое) влезает на экран чата.
+// visibleMessages returns the number of message lines that fit on the chat
+// screen. With word-wrap, a single message can span multiple lines.
 func (m *model) visibleMessages() int {
 	h := m.height
 	if h <= 0 {
@@ -930,7 +931,7 @@ func (m model) viewChat() string {
 	} else if len(m.messages) == 0 {
 		b.WriteString(dimStyle.Render("(empty)"))
 	} else {
-		vm := m.visibleMessages()
+		maxLines := m.visibleMessages()
 		end := len(m.messages) - m.msgOffset
 		if end > len(m.messages) {
 			end = len(m.messages)
@@ -938,12 +939,28 @@ func (m model) viewChat() string {
 		if end < 0 {
 			end = 0
 		}
-		start := end - vm
-		if start < 0 {
-			start = 0
+
+		// Render messages from `end` backwards, accumulating wrapped lines
+		// until we hit maxLines (always include at least one message).
+		type rendered struct {
+			text  string
+			lines int
+		}
+		var stack []rendered
+		linesUsed := 0
+		start := end
+		for i := end - 1; i >= 0; i-- {
+			r := renderMessageInline(m.messages[i], chatName, selfName, m.width)
+			n := strings.Count(r, "\n") + 1
+			if linesUsed+n > maxLines && len(stack) > 0 {
+				break
+			}
+			stack = append([]rendered{{text: r, lines: n}}, stack...)
+			linesUsed += n
+			start = i
 		}
 
-		// Индикатор "выше есть сообщения"
+		// Above-hint
 		if start > 0 {
 			hint := fmt.Sprintf("↑ %d more above", start)
 			if m.hasMore {
@@ -960,12 +977,12 @@ func (m model) viewChat() string {
 			b.WriteString("\n")
 		}
 
-		for _, msg := range m.messages[start:end] {
-			b.WriteString(renderMessageInline(msg, chatName, selfName, m.width))
+		for _, r := range stack {
+			b.WriteString(r.text)
 			b.WriteString("\n")
 		}
 
-		// Индикатор "ниже есть сообщения"
+		// Below-hint
 		if end < len(m.messages) {
 			b.WriteString(dimStyle.Render(fmt.Sprintf("↓ %d more below (G — bottom)", len(m.messages)-end)))
 			b.WriteString("\n")
@@ -1030,7 +1047,7 @@ func renderMessageInline(msg messageEntry, chatName, selfName string, width int)
 		body = "(empty)"
 	}
 
-	// формат: [HH:MM] Имя: текст
+	// Build styled prefix: "[HH:MM] Sender: "
 	timeS := dimStyle.Render("[" + ts + "]")
 	var nameS string
 	if msg.out {
@@ -1038,32 +1055,81 @@ func renderMessageInline(msg messageEntry, chatName, selfName string, width int)
 	} else {
 		nameS = inMsgStyle.Bold(true).Render(sender)
 	}
+	prefix := timeS + " " + nameS + ": "
+	prefixWidth := lipgloss.Width(prefix)
 
-	line := timeS + " " + nameS + ": " + body
-
-	// обрезаем по ширине терминала (грубо — по рунам)
-	maxW := width - 2
-	if maxW > 20 {
-		line = truncRendered(line, maxW)
+	// Available width for the body (with a small right margin).
+	avail := width - prefixWidth - 1
+	if avail < 10 {
+		avail = 10
 	}
-	return line
+
+	chunks := wrapText(body, avail)
+	if len(chunks) == 0 {
+		return prefix
+	}
+
+	var out strings.Builder
+	indent := strings.Repeat(" ", prefixWidth)
+	for i, c := range chunks {
+		if i == 0 {
+			out.WriteString(prefix + c)
+		} else {
+			out.WriteString("\n" + indent + c)
+		}
+	}
+	return out.String()
 }
 
-// truncRendered обрезает строку с ANSI-кодами по визуальной ширине (приблизительно — по рунам без учёта кодов).
-// Для простоты используем lipgloss.Width.
-func truncRendered(s string, max int) string {
-	w := lipgloss.Width(s)
-	if w <= max {
-		return s
+// wrapText performs a simple word-wrap by the given visible width.
+// Single words longer than width are hard-cut by runes.
+func wrapText(s string, width int) []string {
+	if width < 1 {
+		width = 1
 	}
-	// грубое усечение: режем сырую строку до max рун, добавляя многоточие
-	// для большинства случаев достаточно
-	r := []rune(s)
-	if len(r) > max {
-		r = r[:max-1]
-		return string(r) + "…"
+	var lines []string
+	var cur []rune
+	flush := func() {
+		if len(cur) > 0 {
+			lines = append(lines, string(cur))
+			cur = cur[:0]
+		}
 	}
-	return s
+
+	for _, word := range strings.Fields(s) {
+		wr := []rune(word)
+		// Word longer than the whole width: hard-cut into pieces.
+		if len(wr) > width {
+			flush()
+			for len(wr) > width {
+				lines = append(lines, string(wr[:width]))
+				wr = wr[width:]
+			}
+			if len(wr) > 0 {
+				cur = append(cur, wr...)
+			}
+			continue
+		}
+		// Try to append to current line with a space.
+		needed := len(wr)
+		if len(cur) > 0 {
+			needed++ // for the space
+		}
+		if len(cur)+needed > width {
+			flush()
+			cur = append(cur, wr...)
+		} else {
+			if len(cur) > 0 {
+				cur = append(cur, ' ')
+			}
+			cur = append(cur, wr...)
+		}
+	}
+	flush()
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
 }
 
 // =====================================================================
