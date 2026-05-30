@@ -2,7 +2,7 @@
 
 # Build with memory limits (gotd/td/tg is a huge auto-generated package)
 build:
-	GOGC=20 GOMEMLIMIT=2GiB go build -p=1 -o vimgram .
+	GOGC=20 GOMEMLIMIT=2GiB go build -p=1 -o vimgram ./cmd/vimgram
 
 run: build
 	./vimgram
