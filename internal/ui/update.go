@@ -172,7 +172,7 @@ func (m Model) openSelectedChat() (tea.Model, tea.Cmd) {
 	m.loadingMsg = true
 	m.loadingMore = false
 	m.hasMore = true
-	m.msgOffset = 0
+	m.lineOffset = 0
 	m.vimMode = app.ModeVisual
 	m.msgInput.SetValue("")
 	m.msgInput.Blur()
@@ -197,8 +197,8 @@ func (m Model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateChatVisual(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	vm := m.visibleMessages()
-	maxOffset := clampMin(len(m.messages)-vm, 0)
+	height := m.chatBodyHeight()
+	maxOffset := m.maxLineOffset()
 
 	switch msg.String() {
 	case ":":
@@ -209,32 +209,32 @@ func (m Model) updateChatVisual(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.msgInput.Focus()
 		return m, textinput.Blink
 	case "pgup", "ctrl+u":
-		m.msgOffset += vm / 2
-		if m.msgOffset >= maxOffset {
-			m.msgOffset = maxOffset
+		m.lineOffset += height / 2
+		if m.lineOffset >= maxOffset {
+			m.lineOffset = maxOffset
 			if cmd := m.maybeLoadOlder(); cmd != nil {
 				return m, cmd
 			}
 		}
 	case "pgdown", "ctrl+d":
-		m.msgOffset = clampMin(m.msgOffset-vm/2, 0)
+		m.lineOffset = clampMin(m.lineOffset-height/2, 0)
 	case "k", "up":
-		if m.msgOffset < maxOffset {
-			m.msgOffset++
+		if m.lineOffset < maxOffset {
+			m.lineOffset++
 		} else if cmd := m.maybeLoadOlder(); cmd != nil {
 			return m, cmd
 		}
 	case "j", "down":
-		if m.msgOffset > 0 {
-			m.msgOffset--
+		if m.lineOffset > 0 {
+			m.lineOffset--
 		}
 	case "g", "home":
-		m.msgOffset = maxOffset
+		m.lineOffset = maxOffset
 		if cmd := m.maybeLoadOlder(); cmd != nil {
 			return m, cmd
 		}
 	case "G", "end":
-		m.msgOffset = 0
+		m.lineOffset = 0
 	}
 	return m, nil
 }
@@ -274,7 +274,7 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 	}
 	m.msgInput.SetValue("")
 	m.sending = true
-	m.msgOffset = 0
+	m.lineOffset = 0
 	peer := m.selected.Peer
 	client := m.client
 	return m, func() tea.Msg {
@@ -341,7 +341,7 @@ func (m Model) backToChatList() Model {
 	m.msgInput.Blur()
 	m.msgInput.SetValue("")
 	m.vimMode = app.ModeVisual
-	m.msgOffset = 0
+	m.lineOffset = 0
 	return m
 }
 
@@ -390,15 +390,12 @@ func (m Model) prependMessages(prefix []app.Message, hasMore bool) Model {
 	if len(prefix) == 0 {
 		return m
 	}
+	// The viewport is anchored to the bottom, so prepending older messages
+	// does not shift what the user is currently looking at — no offset change
+	// is needed. Just clamp in case the body height changed meanwhile.
 	m.messages = append(prefix, m.messages...)
-	m.msgOffset += len(prefix)
-	vm := m.visibleMessages()
-	max := clampMin(len(m.messages)-vm, 0)
-	if m.msgOffset > max {
-		m.msgOffset = max
-	}
-	if m.msgOffset < 0 {
-		m.msgOffset = 0
+	if max := m.maxLineOffset(); m.lineOffset > max {
+		m.lineOffset = max
 	}
 	return m
 }
@@ -419,16 +416,26 @@ func (m Model) onIncomingMessage(peerKey string, msg app.Message) Model {
 
 	// 2) if it's the open chat, append + reset unread
 	if isCurrent {
-		wasAtBottom := m.msgOffset == 0
+		wasAtBottom := m.lineOffset == 0
+		addedLines := m.renderedLineCount(msg)
 		m.messages = append(m.messages, msg)
+		// If the user has scrolled up, keep their view stable by pushing the
+		// offset down by however many lines the new message occupies.
 		if !wasAtBottom {
-			m.msgOffset++
+			m.lineOffset += addedLines
 		}
 		if idx := indexOfDialog(m.dialogs, peerKey); idx >= 0 {
 			m.dialogs[idx].Unread = 0
 		}
 	}
 	return m
+}
+
+// renderedLineCount returns how many visual lines a message occupies at the
+// current width.
+func (m Model) renderedLineCount(msg app.Message) int {
+	chatName, selfName := m.chatAndSelfName()
+	return strings.Count(renderMessage(msg, chatName, selfName, m.width), "\n") + 1
 }
 
 func indexOfDialog(dialogs []app.Dialog, key string) int {

@@ -145,54 +145,46 @@ func titleOrFallback(t string) string {
 
 // ----- Chat view ----------------------------------------------------------
 
+// viewChat builds the chat screen as exactly `height` lines:
+//   header(1) + body(height-3) + input(1) + status(1)
+// The body is always padded to its full height, so the input and status line
+// stay pinned to the bottom and never jump as content changes.
 func (m Model) viewChat() string {
-	var b strings.Builder
-	b.WriteString(m.viewChatHeader())
-	b.WriteString("\n")
-	b.WriteString(m.viewChatBody())
-	b.WriteString("\n")
-	b.WriteString(m.viewChatInput())
-	b.WriteString("\n")
-	b.WriteString(m.viewStatusLine(m.chatHints()))
-	if m.err != nil {
-		b.WriteString("\n")
-		b.WriteString(errorStyle.Render("Error: " + m.err.Error()))
-	}
-	return b.String()
+	lines := make([]string, 0, m.heightOrDefault())
+	lines = append(lines, m.viewChatHeader())
+	lines = append(lines, m.viewChatBody()...)
+	lines = append(lines, m.viewChatInput())
+	lines = append(lines, m.viewChatStatusLine())
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) viewChatHeader() string {
 	title := "(chat)"
-	kind := ""
+	rawPrefix := ""
 	if m.selected != nil {
 		title = m.selected.Title
-		kind = string(m.selected.Kind)
+		rawPrefix = "[" + string(m.selected.Kind) + "] "
 	}
+	// Truncate so the header is always a single terminal line.
+	avail := clampMin(m.widthOrDefault()-len(rawPrefix), 1)
+	title = truncRunes(title, avail)
+
 	prefix := ""
-	if kind != "" {
-		prefix = dimStyle.Render("[" + kind + "] ")
+	if rawPrefix != "" {
+		prefix = dimStyle.Render(rawPrefix)
 	}
-	return prefix + titleStyle.Render(title)
+	return prefix + chatTitleStyle.Render(title)
 }
 
-func (m Model) viewChatBody() string {
+// viewChatBody returns exactly chatBodyHeight lines for the message area.
+func (m Model) viewChatBody() []string {
 	if m.loadingMsg {
-		return m.spin.View() + " Loading messages..."
+		return m.padBody([]string{m.spin.View() + " Loading messages..."})
 	}
 	if len(m.messages) == 0 {
-		return dimStyle.Render("(empty)")
+		return m.padBody([]string{dimStyle.Render("(empty)")})
 	}
-	chatName, selfName := m.chatAndSelfName()
-	stack, start, end := m.windowMessages(chatName, selfName)
-
-	var b strings.Builder
-	b.WriteString(m.viewAboveHint(start))
-	for _, r := range stack {
-		b.WriteString(r)
-		b.WriteString("\n")
-	}
-	b.WriteString(m.viewBelowHint(end))
-	return strings.TrimRight(b.String(), "\n")
+	return m.chatViewport()
 }
 
 func (m Model) chatAndSelfName() (string, string) {
@@ -207,60 +199,6 @@ func (m Model) chatAndSelfName() (string, string) {
 	return chat, self
 }
 
-// windowMessages renders messages starting from the latest visible one,
-// walking backwards until the visible-line budget is exhausted. Returns the
-// rendered slice (in chronological order), the first visible index, and the
-// last visible index (exclusive).
-func (m Model) windowMessages(chatName, selfName string) ([]string, int, int) {
-	maxLines := m.visibleMessages()
-	end := len(m.messages) - m.msgOffset
-	if end > len(m.messages) {
-		end = len(m.messages)
-	}
-	if end < 0 {
-		end = 0
-	}
-
-	var rendered []string
-	used := 0
-	start := end
-	for i := end - 1; i >= 0; i-- {
-		r := renderMessage(m.messages[i], chatName, selfName, m.width)
-		n := strings.Count(r, "\n") + 1
-		if used+n > maxLines && len(rendered) > 0 {
-			break
-		}
-		rendered = append([]string{r}, rendered...)
-		used += n
-		start = i
-	}
-	return rendered, start, end
-}
-
-func (m Model) viewAboveHint(start int) string {
-	if start > 0 {
-		hint := fmt.Sprintf("↑ %d more above", start)
-		if m.hasMore {
-			hint += " (k/PgUp — load older)"
-		}
-		return dimStyle.Render(hint) + "\n"
-	}
-	if m.loadingMore {
-		return m.spin.View() + dimStyle.Render(" loading older messages...") + "\n"
-	}
-	if !m.hasMore && len(m.messages) > 0 {
-		return dimStyle.Render("— start of chat —") + "\n"
-	}
-	return ""
-}
-
-func (m Model) viewBelowHint(end int) string {
-	if end >= len(m.messages) {
-		return ""
-	}
-	return dimStyle.Render(fmt.Sprintf("↓ %d more below (G — bottom)", len(m.messages)-end)) + "\n"
-}
-
 func (m Model) viewChatInput() string {
 	if m.sending {
 		return m.spin.View() + " Sending..."
@@ -272,7 +210,7 @@ func (m Model) viewChatInput() string {
 	if val == "" {
 		return dimStyle.Render("(press 'a' to type)")
 	}
-	return dimStyle.Render("> " + val)
+	return dimStyle.Render(truncRunes("> "+val, m.widthOrDefault()))
 }
 
 func (m Model) chatHints() string {
@@ -285,6 +223,24 @@ func (m Model) chatHints() string {
 const chatListHints = "j/k — move · g/G — edge · enter — open · : — command (:q :wq :qa)"
 
 // ----- Status line (mode badge + hints / command line) -------------------
+
+// viewChatStatusLine is the single bottom line of the chat screen. It shows
+// the mode badge plus, depending on state, the command buffer, an error, or
+// the keybinding hints — but is always exactly one line.
+func (m Model) viewChatStatusLine() string {
+	badge := m.renderModeBadge()
+	var tail string
+	switch {
+	case m.vimMode == app.ModeCommand:
+		tail = cmdLineStyle.Render(":" + m.cmdBuf + "█")
+	case m.err != nil:
+		tail = errorStyle.Render("Error: " + m.err.Error())
+	default:
+		// dimStyle (no top margin) keeps this on a single line.
+		tail = dimStyle.Render(m.chatHints())
+	}
+	return badge + "  " + tail
+}
 
 func (m Model) viewStatusLine(hints string) string {
 	badge := m.renderModeBadge()

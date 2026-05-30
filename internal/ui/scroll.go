@@ -3,7 +3,7 @@ package ui
 const (
 	// Layout estimates used by visible-area calculations.
 	chatListChrome = 6 // header + footer + counter + paddings
-	chatViewChrome = 8 // header + input + status + footer + scroll-hints + padding
+	chatViewChrome = 3 // header(1) + input(1) + status(1)
 )
 
 // visibleRows returns the number of one-line rows that fit in the chat list.
@@ -16,13 +16,15 @@ func (m *Model) visibleRows() int {
 	return v
 }
 
-// visibleMessages returns the number of message lines that fit on the chat
-// screen. With word-wrap, one message may span multiple lines.
-func (m *Model) visibleMessages() int {
+// chatBodyHeight returns the number of terminal lines reserved for the
+// message area in the chat view. The header, input, and status line take a
+// fixed line each, so the body fills everything in between. This is what lets
+// the status line stay pinned to the bottom regardless of content.
+func (m *Model) chatBodyHeight() int {
 	h := m.heightOrDefault()
 	lines := h - chatViewChrome
-	if lines < 3 {
-		return 3
+	if lines < 1 {
+		return 1
 	}
 	return lines
 }
@@ -32,6 +34,13 @@ func (m *Model) heightOrDefault() int {
 		return m.height
 	}
 	return 24
+}
+
+func (m *Model) widthOrDefault() int {
+	if m.width > 0 {
+		return m.width
+	}
+	return 80
 }
 
 func (m *Model) adjustListOffset() {

@@ -5,6 +5,9 @@ import "github.com/charmbracelet/lipgloss"
 // All lipgloss styles live here so views can be pure compositions.
 var (
 	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#5fafff")).MarginBottom(1)
+	// chatTitleStyle has no bottom margin so the chat header is exactly one
+	// line — required for the fixed-height, bottom-pinned layout.
+	chatTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#5fafff"))
 	labelStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#a0a0a0"))
 	successStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#5fff87"))
 	errorStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ff5f5f"))

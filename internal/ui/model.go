@@ -33,7 +33,7 @@ type Model struct {
 	// Chat view
 	selected    *app.Dialog
 	messages    []app.Message
-	msgOffset   int
+	lineOffset  int // scroll position in visual lines from the bottom (0 = newest)
 	loadingMsg  bool
 	loadingMore bool
 	hasMore     bool
