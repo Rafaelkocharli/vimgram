@@ -8,20 +8,23 @@ import "time"
 type VimMode int
 
 const (
-	ModeVisual VimMode = iota
+	ModeNormal VimMode = iota // base mode (zero value)
+	ModeVisual
 	ModeEdit
 	ModeCommand
 )
 
-// Label returns a short human label like " VISUAL ".
+// Label returns a short human label like " NORMAL ".
 func (v VimMode) Label() string {
 	switch v {
+	case ModeVisual:
+		return " VISUAL "
 	case ModeEdit:
 		return " INSERT "
 	case ModeCommand:
 		return " COMMAND "
 	default:
-		return " VISUAL "
+		return " NORMAL "
 	}
 }
 

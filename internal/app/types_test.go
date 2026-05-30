@@ -21,6 +21,7 @@ func TestSelfDisplayName(t *testing.T) {
 
 func TestVimModeLabel(t *testing.T) {
 	tests := map[VimMode]string{
+		ModeNormal:  " NORMAL ",
 		ModeVisual:  " VISUAL ",
 		ModeEdit:    " INSERT ",
 		ModeCommand: " COMMAND ",

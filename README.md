@@ -12,7 +12,7 @@ your flow.
 Vimgram brings the modal editing model — and the **buffer/window** data model —
 you already know to Telegram:
 
-- **Visual mode** to move around, **Insert mode** to type, **Command mode** (`:`)
+- **Normal mode** to move around, **Insert mode** to type, **Command mode** (`:`)
 - **Buffers**: each open chat (and the chat list) is a buffer you can switch
   between instantly — `:b`, `:bnext`, `:bprev`, `:bdelete`, `:ls`
 - **Windows**: split the screen vertically and view two chats side by side —
@@ -26,7 +26,7 @@ No mouse, no clutter, no context switch.
   with `:ls`, jump with `:b N` / `:bnext` / `:bprev` / `:b#`, drop with `:bdelete`
 - **Vertical splits** — `:vsplit` / `:vs [buffer]` to view chats side by side,
   `<C-w>h` / `<C-w>l` / `<C-w>w` to move focus, `:close` to close a window
-- **Modal controls** — `VISUAL` (navigate) · `INSERT` (type) · `COMMAND` (`:`)
+- **Modal controls** — `NORMAL` (navigate) · `INSERT` (type) · `COMMAND` (`:`) · `VISUAL` (`v`)
 - **Full chat list** — all your dialogs, sorted by last message, fully paginated
 - **Message history** — inline `[HH:MM] Sender: text` format with word-wrap and
   infinite scroll-back, scrolled line-by-line
@@ -110,21 +110,27 @@ screen to see more than one at a time.
 | `g` / `G`             | Top / bottom |
 | `enter`               | Open the selected chat (as a buffer) |
 
-### Chat view — VISUAL mode
+### Chat view — NORMAL mode
 
-| Key                                   | Action            |
-| ------------------------------------- | ----------------- |
-| `a` / `i`                             | Enter INSERT mode |
-| `j` / `k`                             | Scroll one line   |
-| `pgup` / `pgdn` / `ctrl+u` / `ctrl+d` | Half-page scroll  |
-| `g` / `G`                             | Oldest / newest   |
+| Key                                   | Action             |
+| ------------------------------------- | ------------------ |
+| `a` / `i`                             | Enter INSERT mode  |
+| `v`                                   | Enter VISUAL mode  |
+| `j` / `k`                             | Scroll one line    |
+| `pgup` / `pgdn` / `ctrl+u` / `ctrl+d` | Half-page scroll   |
+| `g` / `G`                             | Oldest / newest    |
 
 ### Chat view — INSERT mode
 
 | Key     | Action         |
 | ------- | -------------- |
 | `enter` | Send message   |
-| `esc`   | Back to VISUAL |
+| `esc`   | Back to NORMAL |
+
+### VISUAL mode
+
+Enter with `v` from NORMAL, leave with `esc`. (Selection actions are not wired
+up yet — the mode is in place for future text/message selection.)
 
 ### Buffers (`:` commands)
 

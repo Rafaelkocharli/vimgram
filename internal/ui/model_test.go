@@ -361,8 +361,23 @@ func TestEnterInsertMode(t *testing.T) {
 	if m.vimMode != app.ModeEdit {
 		t.Fatal("'a' should enter INSERT mode")
 	}
-	m = pressKey(m, tea.KeyMsg{Type: tea.KeyEsc}) // back to VISUAL
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyEsc}) // back to NORMAL
+	if m.vimMode != app.ModeNormal {
+		t.Fatal("esc should return to NORMAL mode")
+	}
+}
+
+func TestVisualMode(t *testing.T) {
+	m := authedModel(t)
+	if m.vimMode != app.ModeNormal {
+		t.Fatal("base mode should be NORMAL")
+	}
+	m = pressKey(m, keyRunes("v")) // enter VISUAL
 	if m.vimMode != app.ModeVisual {
-		t.Fatal("esc should return to VISUAL mode")
+		t.Fatal("'v' should enter VISUAL mode")
+	}
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyEsc}) // back to NORMAL
+	if m.vimMode != app.ModeNormal {
+		t.Fatal("esc should leave VISUAL mode for NORMAL")
 	}
 }

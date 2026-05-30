@@ -30,7 +30,8 @@ var (
 			Foreground(lipgloss.Color("#ffffff")).
 			Background(lipgloss.Color("#5fafd7")).Padding(0, 1)
 
-	modeVisualStyle  = modeBadgeStyle("#5fafff")
+	modeNormalStyle  = modeBadgeStyle("#5fafff")
+	modeVisualStyle  = modeBadgeStyle("#d75fd7")
 	modeEditStyle    = modeBadgeStyle("#5fff87")
 	modeCommandStyle = modeBadgeStyle("#ffaf00")
 	cmdLineStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffd75f"))

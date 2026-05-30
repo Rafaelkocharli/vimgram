@@ -346,12 +346,14 @@ func (m Model) statusLine() string {
 
 func (m Model) renderModeBadge() string {
 	switch m.vimMode {
+	case app.ModeVisual:
+		return modeVisualStyle.Render(m.vimMode.Label())
 	case app.ModeEdit:
 		return modeEditStyle.Render(m.vimMode.Label())
 	case app.ModeCommand:
 		return modeCommandStyle.Render(m.vimMode.Label())
 	default:
-		return modeVisualStyle.Render(m.vimMode.Label())
+		return modeNormalStyle.Render(m.vimMode.Label())
 	}
 }
 

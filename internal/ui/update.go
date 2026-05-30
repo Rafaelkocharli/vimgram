@@ -94,7 +94,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusWindow(msg.String())
 		return m, nil
 	}
-	if m.vimMode == app.ModeVisual && msg.String() == "ctrl+w" {
+	if m.vimMode == app.ModeNormal && msg.String() == "ctrl+w" {
 		m.pendingCtrlW = true
 		return m, nil
 	}
@@ -174,10 +174,16 @@ func (m Model) updateChatList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.vimMode == app.ModeCommand {
 		return m.updateCommandMode(msg)
 	}
+	if m.vimMode == app.ModeVisual {
+		return m.updateVisualMode(msg)
+	}
 	w := m.activeWindow()
 	switch msg.String() {
 	case ":":
 		m.enterCommandMode()
+		return m, nil
+	case "v":
+		m.vimMode = app.ModeVisual
 		return m, nil
 	case "up", "k":
 		m.moveCursor(-1)
@@ -238,12 +244,24 @@ func (m Model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateCommandMode(msg)
 	case app.ModeEdit:
 		return m.updateChatEdit(msg)
+	case app.ModeVisual:
+		return m.updateVisualMode(msg)
 	default:
-		return m.updateChatVisual(msg)
+		return m.updateChatNormal(msg)
 	}
 }
 
-func (m Model) updateChatVisual(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// updateVisualMode handles VISUAL mode. It currently has no selection
+// behaviour yet — only entering (via "v" from NORMAL) and leaving (esc), as in
+// vim. Shared by the chat list and chat views.
+func (m Model) updateVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "esc" {
+		m.vimMode = app.ModeNormal
+	}
+	return m, nil
+}
+
+func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	height := m.chatBodyHeight()
 	w := m.activeWindow()
 	maxOffset := m.maxLineOffset(m.activeBuffer(), w.width)
@@ -251,6 +269,9 @@ func (m Model) updateChatVisual(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case ":":
 		m.enterCommandMode()
+		return m, nil
+	case "v":
+		m.vimMode = app.ModeVisual
 		return m, nil
 	case "a", "i":
 		m.vimMode = app.ModeEdit
@@ -305,7 +326,7 @@ func (m *Model) maybeLoadOlder() tea.Cmd {
 func (m Model) updateChatEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.vimMode = app.ModeVisual
+		m.vimMode = app.ModeNormal
 		m.msgInput.Blur()
 		return m, nil
 	case "enter":
@@ -361,7 +382,7 @@ func (m Model) updateCommandMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) exitCommandMode(buf string) {
-	m.vimMode = app.ModeVisual
+	m.vimMode = app.ModeNormal
 	m.cmdBuf = buf
 }
 
@@ -439,7 +460,7 @@ func (m *Model) switchBuffer(id int) {
 	m.activeWindow().lineOffset = 0
 	m.activeWindow().cursor = 0
 	m.activeWindow().listOffset = 0
-	m.vimMode = app.ModeVisual
+	m.vimMode = app.ModeNormal
 	m.err = nil
 
 	if b := m.activeBuffer(); b != nil && b.kind == bufChat {
@@ -479,7 +500,7 @@ func (m Model) deleteBuffer(id int) Model {
 			w.lineOffset, w.cursor, w.listOffset = 0, 0, 0
 		}
 	}
-	m.vimMode = app.ModeVisual
+	m.vimMode = app.ModeNormal
 	m.syncInputToActive()
 	return m
 }
@@ -525,7 +546,7 @@ func (m Model) closeWindow() Model {
 	if m.focused >= len(m.wins) {
 		m.focused = len(m.wins) - 1
 	}
-	m.vimMode = app.ModeVisual
+	m.vimMode = app.ModeNormal
 	m.syncInputToActive()
 	return m
 }
