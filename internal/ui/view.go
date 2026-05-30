@@ -64,38 +64,47 @@ func (m Model) viewAuthFooter() string {
 
 // ----- Chat list ----------------------------------------------------------
 
+// viewChatList renders exactly `height` lines: header(1) + body + status(1),
+// so the status line stays pinned to the bottom — same row as on the chat
+// screen, eliminating the jump when switching between them.
 func (m Model) viewChatList() string {
-	var b strings.Builder
-	b.WriteString(titleStyle.Render(fmt.Sprintf("Chats · %s", m.self.DisplayName())))
-	b.WriteString("\n")
-
-	if len(m.dialogs) == 0 {
-		b.WriteString(dimStyle.Render("No chats"))
-	} else {
-		b.WriteString(m.viewChatListRows())
-	}
-
-	b.WriteString("\n")
-	b.WriteString(m.statusLine())
-	return b.String()
+	lines := make([]string, 0, m.heightOrDefault())
+	lines = append(lines, m.viewChatListHeader())
+	lines = append(lines, m.viewChatListBody()...)
+	lines = append(lines, m.statusLine())
+	return strings.Join(lines, "\n")
 }
 
-func (m Model) viewChatListRows() string {
-	var b strings.Builder
+func (m Model) viewChatListHeader() string {
+	header := fmt.Sprintf("Chats · %s", m.self.DisplayName())
+	if len(m.dialogs) > 0 {
+		header += fmt.Sprintf("  (%d/%d)", m.cursor+1, len(m.dialogs))
+	}
+	return chatTitleStyle.Render(truncRunes(header, m.widthOrDefault()))
+}
+
+// viewChatListBody returns exactly visibleRows() lines, top-anchored, padding
+// with blanks when there are fewer dialogs than fit.
+func (m Model) viewChatListBody() []string {
 	rows := m.visibleRows()
-	end := m.listOffset + rows
-	if end > len(m.dialogs) {
-		end = len(m.dialogs)
+	out := make([]string, 0, rows)
+
+	if len(m.dialogs) == 0 {
+		out = append(out, dimStyle.Render("No chats"))
+	} else {
+		end := m.listOffset + rows
+		if end > len(m.dialogs) {
+			end = len(m.dialogs)
+		}
+		for i := m.listOffset; i < end; i++ {
+			out = append(out, m.renderDialogRow(i, i == m.cursor))
+		}
 	}
-	for i := m.listOffset; i < end; i++ {
-		b.WriteString(m.renderDialogRow(i, i == m.cursor))
-		b.WriteString("\n")
+
+	for len(out) < rows {
+		out = append(out, "")
 	}
-	if len(m.dialogs) > rows {
-		b.WriteString(dimStyle.Render(fmt.Sprintf("  %d / %d", m.cursor+1, len(m.dialogs))))
-		b.WriteString("\n")
-	}
-	return b.String()
+	return out[:rows]
 }
 
 func (m Model) renderDialogRow(idx int, selected bool) string {

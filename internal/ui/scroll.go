@@ -1,17 +1,18 @@
 package ui
 
 const (
-	// Layout estimates used by visible-area calculations.
-	chatListChrome = 6 // header + footer + counter + paddings
+	// Layout constants used by the fixed-height, bottom-pinned layouts.
+	chatListChrome = 2 // header(1) + status(1)
 	chatViewChrome = 3 // header(1) + input(1) + status(1)
 )
 
-// visibleRows returns the number of one-line rows that fit in the chat list.
+// visibleRows returns the number of dialog rows that fit in the chat list
+// body (everything between the header and the status line).
 func (m *Model) visibleRows() int {
 	h := m.heightOrDefault()
 	v := h - chatListChrome
-	if v < 3 {
-		return 3
+	if v < 1 {
+		return 1
 	}
 	return v
 }
