@@ -100,9 +100,10 @@ func (c *Client) SetPrompter(p AuthPrompter) { c.prompter = p }
 // telegram worker goroutine.
 func (c *Client) SetEventSink(fn func(Event)) { c.emit = fn }
 
-// OpenChat asks the client to load history for the given peer.
-func (c *Client) OpenChat(peer app.PeerRef) {
-	c.requests <- openChatReq{peer: peer.(tg.InputPeerClass)}
+// OpenChat asks the client to load history for the given peer. limit hints
+// how many messages to fetch so the viewport can be filled on first open.
+func (c *Client) OpenChat(peer app.PeerRef, limit int) {
+	c.requests <- openChatReq{peer: peer.(tg.InputPeerClass), limit: limit}
 }
 
 // LoadMore asks the client to load older history (messages with id < beforeID).
@@ -117,7 +118,10 @@ func (c *Client) SendMessage(peer app.PeerRef, text string) {
 
 // Internal request types passed via c.requests.
 type (
-	openChatReq struct{ peer tg.InputPeerClass }
+	openChatReq struct {
+		peer  tg.InputPeerClass
+		limit int
+	}
 	loadMoreReq struct {
 		peer     tg.InputPeerClass
 		beforeID int
@@ -201,14 +205,14 @@ func (c *Client) serveRequests(ctx context.Context, tgc *telegram.Client) error 
 func (c *Client) handleRequest(ctx context.Context, tgc *telegram.Client, req any) {
 	switch r := req.(type) {
 	case openChatReq:
-		msgs, more, err := fetchHistory(ctx, tgc, r.peer, 0)
+		msgs, more, err := fetchHistory(ctx, tgc, r.peer, 0, r.limit)
 		if err != nil {
 			c.emit(EventError{Err: err})
 			return
 		}
 		c.emit(EventMessagesLoaded{Messages: msgs, HasMore: more})
 	case loadMoreReq:
-		msgs, more, err := fetchHistory(ctx, tgc, r.peer, r.beforeID)
+		msgs, more, err := fetchHistory(ctx, tgc, r.peer, r.beforeID, historyPageSize)
 		if err != nil {
 			c.emit(EventError{Err: err})
 			return

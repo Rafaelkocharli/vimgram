@@ -12,15 +12,26 @@ import (
 	"vimgram/internal/app"
 )
 
-const historyPageSize = 50
+const (
+	historyPageSize = 50  // page size for incremental "load older" requests
+	historyMaxLimit = 100 // Telegram's per-request cap for messages.getHistory
+)
 
-// fetchHistory loads up to historyPageSize messages from the given peer.
-// If beforeID > 0, only messages older than that ID are returned.
-// hasMore is true if the server returned a full page (i.e. more may exist).
-func fetchHistory(ctx context.Context, client *telegram.Client, peer tg.InputPeerClass, beforeID int) (
+// fetchHistory loads up to `limit` messages from the given peer. The limit is
+// clamped to [historyPageSize, historyMaxLimit]. If beforeID > 0, only
+// messages older than that ID are returned. hasMore is true if the server
+// returned a full page (i.e. more may exist).
+func fetchHistory(ctx context.Context, client *telegram.Client, peer tg.InputPeerClass, beforeID, limit int) (
 	[]app.Message, bool, error,
 ) {
-	req := &tg.MessagesGetHistoryRequest{Peer: peer, Limit: historyPageSize}
+	if limit < historyPageSize {
+		limit = historyPageSize
+	}
+	if limit > historyMaxLimit {
+		limit = historyMaxLimit
+	}
+
+	req := &tg.MessagesGetHistoryRequest{Peer: peer, Limit: limit}
 	if beforeID > 0 {
 		req.OffsetID = beforeID
 	}
@@ -47,7 +58,7 @@ func fetchHistory(ctx context.Context, client *telegram.Client, peer tg.InputPee
 
 	// API returns newest-first; flip to chronological.
 	reverse(messages)
-	hasMore := len(rawMsgs) >= historyPageSize
+	hasMore := len(rawMsgs) >= limit
 	return messages, hasMore, nil
 }
 

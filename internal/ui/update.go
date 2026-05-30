@@ -179,8 +179,12 @@ func (m Model) openSelectedChat() (tea.Model, tea.Cmd) {
 	m.msgInput.SetValue("")
 	m.msgInput.Blur()
 	client := m.client
+	// Fetch at least enough messages to fill the viewport. Each message spans
+	// one or more lines, so requesting bodyHeight messages guarantees the
+	// screen fills (when that much history exists). +1 covers the top marker.
+	want := m.chatBodyHeight() + 1
 	return m, func() tea.Msg {
-		client.OpenChat(d.Peer)
+		client.OpenChat(d.Peer, want)
 		return nil
 	}
 }
