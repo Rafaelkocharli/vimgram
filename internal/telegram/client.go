@@ -1,0 +1,227 @@
+package telegram
+
+import (
+	"context"
+	"fmt"
+	"math/rand"
+	"strings"
+	"time"
+
+	"github.com/gotd/td/session"
+	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/telegram/auth"
+	"github.com/gotd/td/tg"
+
+	"vimgram/internal/app"
+)
+
+// Event is the marker type for events emitted by the client to the UI.
+type Event interface{ isEvent() }
+
+type (
+	// EventConnected fires once after the underlying connection is up.
+	EventConnected struct{}
+	// EventDialogsLoaded fires after the initial dialog list is fetched.
+	EventDialogsLoaded struct {
+		Self    app.Self
+		Dialogs []app.Dialog
+	}
+	// EventMessagesLoaded fires after history is loaded for a chat.
+	EventMessagesLoaded struct {
+		Messages []app.Message
+		HasMore  bool
+	}
+	// EventMessagesPrepended fires after older history is fetched.
+	EventMessagesPrepended struct {
+		Messages []app.Message
+		HasMore  bool
+	}
+	// EventMessageSent fires after an outgoing message attempt completes.
+	EventMessageSent struct {
+		Message app.Message
+		Err     error
+	}
+	// EventMessageReceived fires for incoming messages (from updates).
+	EventMessageReceived struct {
+		PeerKey string
+		Message app.Message
+	}
+	// EventError signals a non-fatal background error.
+	EventError struct{ Err error }
+)
+
+func (EventConnected) isEvent()         {}
+func (EventDialogsLoaded) isEvent()     {}
+func (EventMessagesLoaded) isEvent()    {}
+func (EventMessagesPrepended) isEvent() {}
+func (EventMessageSent) isEvent()       {}
+func (EventMessageReceived) isEvent()   {}
+func (EventError) isEvent()             {}
+
+// Client is the high-level Telegram facade used by the UI.
+type Client struct {
+	appID    int
+	appHash  string
+	storage  session.Storage
+	prompter AuthPrompter
+	emit     func(Event)
+
+	requests chan any
+	self     app.Self
+}
+
+// NewClient constructs a Client. The session storage is where session data
+// is persisted between runs.
+func NewClient(appID int, appHash string, storage session.Storage) *Client {
+	return &Client{
+		appID:    appID,
+		appHash:  appHash,
+		storage:  storage,
+		requests: make(chan any, 8),
+	}
+}
+
+// SetPrompter attaches an AuthPrompter; must be called before Run.
+func (c *Client) SetPrompter(p AuthPrompter) { c.prompter = p }
+
+// SetEventSink attaches the function that receives events from the client.
+// Safe to call from any goroutine; the function will be invoked from the
+// telegram worker goroutine.
+func (c *Client) SetEventSink(fn func(Event)) { c.emit = fn }
+
+// OpenChat asks the client to load history for the given peer.
+func (c *Client) OpenChat(peer app.PeerRef) {
+	c.requests <- openChatReq{peer: peer.(tg.InputPeerClass)}
+}
+
+// LoadMore asks the client to load older history (messages with id < beforeID).
+func (c *Client) LoadMore(peer app.PeerRef, beforeID int) {
+	c.requests <- loadMoreReq{peer: peer.(tg.InputPeerClass), beforeID: beforeID}
+}
+
+// SendMessage queues an outgoing message to peer.
+func (c *Client) SendMessage(peer app.PeerRef, text string) {
+	c.requests <- sendMsgReq{peer: peer.(tg.InputPeerClass), text: text}
+}
+
+// Internal request types passed via c.requests.
+type (
+	openChatReq struct{ peer tg.InputPeerClass }
+	loadMoreReq struct {
+		peer     tg.InputPeerClass
+		beforeID int
+	}
+	sendMsgReq struct {
+		peer tg.InputPeerClass
+		text string
+	}
+)
+
+// Run connects to Telegram, performs auth if needed, loads the initial
+// dialog list, then services UI requests until ctx is cancelled.
+func (c *Client) Run(ctx context.Context) error {
+	if c.prompter == nil || c.emit == nil {
+		return fmt.Errorf("client not fully configured: prompter and event sink required")
+	}
+
+	rand.Seed(time.Now().UnixNano())
+
+	dispatcher := buildDispatcher(func(peerKey string, m app.Message) {
+		c.emit(EventMessageReceived{PeerKey: peerKey, Message: m})
+	})
+
+	tgc := telegram.NewClient(c.appID, c.appHash, telegram.Options{
+		SessionStorage: c.storage,
+		UpdateHandler:  dispatcher,
+	})
+
+	defer c.recoverPanic()
+
+	return tgc.Run(ctx, func(ctx context.Context) error {
+		c.emit(EventConnected{})
+
+		flow := auth.NewFlow(userAuth{prompter: c.prompter}, auth.SendCodeOptions{})
+		if err := tgc.Auth().IfNecessary(ctx, flow); err != nil {
+			return fmt.Errorf("auth: %w", err)
+		}
+
+		me, err := tgc.Self(ctx)
+		if err != nil {
+			return fmt.Errorf("self: %w", err)
+		}
+		c.self = app.Self{ID: me.ID, FirstName: me.FirstName, LastName: me.LastName}
+
+		dialogs, err := fetchDialogs(ctx, tgc)
+		if err != nil {
+			return err
+		}
+		c.emit(EventDialogsLoaded{Self: c.self, Dialogs: dialogs})
+
+		return c.serveRequests(ctx, tgc)
+	})
+}
+
+func (c *Client) recoverPanic() {
+	if r := recover(); r != nil {
+		c.emit(EventError{Err: fmt.Errorf("panic: %v", r)})
+	}
+}
+
+// serveRequests is the main request loop after auth completes.
+func (c *Client) serveRequests(ctx context.Context, tgc *telegram.Client) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case req := <-c.requests:
+			c.handleRequest(ctx, tgc, req)
+		}
+	}
+}
+
+func (c *Client) handleRequest(ctx context.Context, tgc *telegram.Client, req any) {
+	switch r := req.(type) {
+	case openChatReq:
+		msgs, more, err := fetchHistory(ctx, tgc, r.peer, 0)
+		if err != nil {
+			c.emit(EventError{Err: err})
+			return
+		}
+		c.emit(EventMessagesLoaded{Messages: msgs, HasMore: more})
+	case loadMoreReq:
+		msgs, more, err := fetchHistory(ctx, tgc, r.peer, r.beforeID)
+		if err != nil {
+			c.emit(EventError{Err: err})
+			return
+		}
+		c.emit(EventMessagesPrepended{Messages: msgs, HasMore: more})
+	case sendMsgReq:
+		msg, err := sendMessage(ctx, tgc, r.peer, r.text, c.self)
+		c.emit(EventMessageSent{Message: msg, Err: err})
+	}
+}
+
+// sendMessage submits an outgoing text message and returns the local
+// representation that the UI can append optimistically.
+func sendMessage(
+	ctx context.Context,
+	tgc *telegram.Client,
+	peer tg.InputPeerClass,
+	text string,
+	self app.Self,
+) (app.Message, error) {
+	_, err := tgc.API().MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
+		Peer:     peer,
+		Message:  text,
+		RandomID: rand.Int63(),
+	})
+	if err != nil {
+		return app.Message{}, fmt.Errorf("send: %w", err)
+	}
+	return app.Message{
+		Out:  true,
+		Text: text,
+		Date: time.Now(),
+		From: strings.TrimSpace(self.FirstName + " " + self.LastName),
+	}, nil
+}
