@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"vimgram/internal/app"
 )
 
@@ -112,7 +110,7 @@ func (m Model) renderDialogRow(idx int, selected bool) string {
 	d := m.dialogs[idx]
 	chip := dialogChip(d.Kind)
 	title := titleOrFallback(d.Title)
-	titleCol := lipgloss.NewStyle().Width(30).Render(truncRunes(title, 28))
+	titleCol := dialogTitleStyle.Render(truncRunes(title, 28))
 
 	previewWidth := clampMin(m.width-2-8-30-8, 10)
 	preview := dimStyle.Render(truncRunes(singleLine(d.LastMsg), previewWidth))

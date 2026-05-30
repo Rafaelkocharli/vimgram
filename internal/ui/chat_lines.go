@@ -2,11 +2,45 @@ package ui
 
 import "strings"
 
-// chatLines flattens the whole loaded history into a flat slice of visual
-// lines (one wrapped message can produce several). The first line is always a
-// "top of history" marker so that scrolling all the way up reveals the load
-// state. Scrolling operates on this flat list, giving true per-line movement.
+// chatCacheKey identifies a rendered history snapshot. If it is unchanged
+// between frames, the flattened lines can be reused verbatim.
+type chatCacheKey struct {
+	version int
+	width   int
+	hasMore bool
+}
+
+// chatCache memoizes the flattened history lines (see chatLines).
+type chatCache struct {
+	key   chatCacheKey
+	lines []string
+}
+
+// chatLines returns the flattened history (see computeChatLines), memoized.
+// Rendering every message through lipgloss on each frame was the dominant
+// allocation source; the cache makes repeated frames essentially free.
 func (m Model) chatLines() []string {
+	// While loading older messages the top line animates a spinner, so the
+	// output changes every frame — skip the cache to keep it live.
+	if m.loadingMore {
+		return m.computeChatLines()
+	}
+	key := chatCacheKey{version: m.msgVersion, width: m.width, hasMore: m.hasMore}
+	if m.chatCache.lines != nil && m.chatCache.key == key {
+		return m.chatCache.lines
+	}
+	lines := m.computeChatLines()
+	m.chatCache.key = key
+	m.chatCache.lines = lines
+	return lines
+}
+
+// computeChatLines flattens the whole loaded history into a flat slice of
+// visual lines (one wrapped message can produce several). The first line is
+// always a "top of history" marker so that scrolling all the way up reveals
+// the load state. Scrolling operates on this flat list, giving true per-line
+// movement.
+func (m Model) computeChatLines() []string {
 	chatName, selfName := m.chatAndSelfName()
 
 	lines := make([]string, 0, len(m.messages)+1)

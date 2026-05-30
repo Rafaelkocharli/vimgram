@@ -170,6 +170,7 @@ func (m Model) openSelectedChat() (tea.Model, tea.Cmd) {
 	m.selected = &d
 	m.screen = app.ScreenChat
 	m.messages = nil
+	m.msgVersion++
 	m.loadingMsg = true
 	m.loadingMore = false
 	m.hasMore = true
@@ -364,6 +365,7 @@ func (m Model) handleTelegramEvent(e telegram.Event) (tea.Model, tea.Cmd) {
 		return m, nil
 	case telegram.EventMessagesLoaded:
 		m.messages = ev.Messages
+		m.msgVersion++
 		m.hasMore = ev.HasMore
 		m.loadingMsg = false
 		return m, nil
@@ -376,6 +378,7 @@ func (m Model) handleTelegramEvent(e telegram.Event) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.messages = append(m.messages, ev.Message)
+		m.msgVersion++
 		return m, nil
 	case telegram.EventMessageReceived:
 		return m.onIncomingMessage(ev.PeerKey, ev.Message), nil
@@ -419,6 +422,7 @@ func (m Model) prependMessages(prefix []app.Message, hasMore bool) Model {
 	// does not shift what the user is currently looking at — no offset change
 	// is needed. Just clamp in case the body height changed meanwhile.
 	m.messages = append(prefix, m.messages...)
+	m.msgVersion++
 	if max := m.maxLineOffset(); m.lineOffset > max {
 		m.lineOffset = max
 	}
@@ -444,6 +448,7 @@ func (m Model) onIncomingMessage(peerKey string, msg app.Message) Model {
 		wasAtBottom := m.lineOffset == 0
 		addedLines := m.renderedLineCount(msg)
 		m.messages = append(m.messages, msg)
+		m.msgVersion++
 		// If the user has scrolled up, keep their view stable by pushing the
 		// offset down by however many lines the new message occupies.
 		if !wasAtBottom {

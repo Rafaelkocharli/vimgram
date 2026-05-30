@@ -44,6 +44,12 @@ type Model struct {
 	hasMore     bool
 	sending     bool
 
+	// Render memoization for the (potentially large) message history.
+	// chatCache is a pointer so writes survive bubbletea's value-copy of the
+	// model. msgVersion is bumped whenever `messages` is reassigned.
+	chatCache  *chatCache
+	msgVersion int
+
 	// Widgets
 	authInput textinput.Model
 	msgInput  textinput.Model
@@ -80,6 +86,7 @@ func NewModel(client *telegram.Client, cancel context.CancelFunc, answers chan s
 		promptAnswers: answers,
 		statuses:      make(map[int64]app.UserStatus),
 		typingUntil:   make(map[int64]time.Time),
+		chatCache:     &chatCache{},
 	}
 }
 

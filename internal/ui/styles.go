@@ -20,6 +20,10 @@ var (
 
 	selBg = lipgloss.NewStyle().Background(lipgloss.Color("#444444")).Foreground(lipgloss.Color("#ffffff"))
 
+	// Fixed-width column for dialog titles in the chat list. Hoisted out of
+	// the per-row hot path to avoid allocating a style on every frame.
+	dialogTitleStyle = lipgloss.NewStyle().Width(30)
+
 	outMsgStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#5fafff"))
 	inMsgStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#dddddd"))
 	unreadStyle = lipgloss.NewStyle().Bold(true).
