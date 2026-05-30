@@ -15,6 +15,8 @@ const (
 	CmdBufferNext           // :bn, :bnext
 	CmdBufferPrev           // :bp, :bprev
 	CmdBufferDelete         // :bd, :bdelete [N]
+	CmdVSplit               // :vsplit, :vs [buffer]
+	CmdClose                // :close
 )
 
 // Command is a parsed ":" command line.
@@ -58,6 +60,10 @@ func ParseCommand(s string) Command {
 		return Command{Kind: CmdBufferPrev}
 	case "bd", "bdelete":
 		return bufferDeleteCommand(arg)
+	case "vs", "vsplit", "vsp":
+		return Command{Kind: CmdVSplit, Arg: arg, HasArg: arg != ""}
+	case "close", "clo":
+		return Command{Kind: CmdClose}
 	}
 	return Command{Kind: CmdUnknown}
 }

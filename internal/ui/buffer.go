@@ -148,4 +148,9 @@ type window struct {
 	lineOffset int // chat scroll, in visual lines from the bottom
 	cursor     int // chat-list selection
 	listOffset int // chat-list scroll
+
+	// width is the inner content width this window was last rendered at.
+	// Cached by the layout compositor so scroll math (which depends on word
+	// wrapping) is available during key handling, before the next render.
+	width int
 }

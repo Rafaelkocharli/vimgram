@@ -38,6 +38,10 @@ var (
 	statusOnlineStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#5fff87"))
 	statusTypingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffd75f"))
 	statusOfflineStyle = lipgloss.NewStyle().Faint(true)
+
+	// Window focus / separator bars.
+	focusBarStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#5fafff"))
+	dimBarStyle   = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#444444"))
 )
 
 func chipStyle(bg string) lipgloss.Style {

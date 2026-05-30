@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"vimgram/internal/app"
 )
 
@@ -17,15 +19,83 @@ func (m Model) View() string {
 	if len(m.overlay) > 0 {
 		return m.viewOverlay()
 	}
-	return m.viewWindow()
+	return m.viewWindows()
 }
 
-// viewWindow renders the active window's buffer full-screen (MVP: one window).
-func (m Model) viewWindow() string {
-	if m.activeBuffer().kind == bufChatList {
-		return m.viewChatListBuffer()
+// ----- Window compositor --------------------------------------------------
+
+// viewWindows lays the windows out left-to-right (vertical splits), then pins
+// a single global status line at the bottom. Total output is exactly `height`
+// rows, so the status line never moves.
+func (m Model) viewWindows() string {
+	n := len(m.wins)
+	widths := splitWidths(m.widthOrDefault(), n)
+	innerHeight := m.heightOrDefault() - 1
+
+	cols := make([][]string, n)
+	for i, w := range m.wins {
+		inner := clampMin(widths[i]-1, 1) // -1 for the focus/separator bar
+		w.width = inner                   // cache for scroll math during key handling
+		rows := m.renderWindowRows(w, inner, i == m.focused)
+		bar := windowBar(i == m.focused)
+		clamp := lipgloss.NewStyle().MaxWidth(inner)
+		for r := range rows {
+			rows[r] = bar + padTo(clamp.Render(rows[r]), inner)
+		}
+		cols[i] = rows
 	}
-	return m.viewChatBuffer()
+
+	var b strings.Builder
+	for r := 0; r < innerHeight; r++ {
+		for i := 0; i < n; i++ {
+			b.WriteString(cols[i][r])
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString(m.statusLine())
+	return b.String()
+}
+
+// splitWidths divides total columns among n windows as evenly as possible,
+// giving the remainder to the leftmost windows.
+func splitWidths(total, n int) []int {
+	if n <= 0 {
+		return nil
+	}
+	base := total / n
+	rem := total % n
+	out := make([]int, n)
+	for i := range out {
+		out[i] = base
+		if i < rem {
+			out[i]++
+		}
+	}
+	return out
+}
+
+func windowBar(focused bool) string {
+	if focused {
+		return focusBarStyle.Render("┃")
+	}
+	return dimBarStyle.Render("│")
+}
+
+// padTo pads s with spaces to exactly w visible columns (ANSI-aware).
+func padTo(s string, w int) string {
+	gap := w - lipgloss.Width(s)
+	if gap <= 0 {
+		return s
+	}
+	return s + strings.Repeat(" ", gap)
+}
+
+// renderWindowRows renders one window's content to exactly height-1 rows.
+func (m Model) renderWindowRows(w *window, width int, focused bool) []string {
+	if m.bufferOf(w).kind == bufChatList {
+		return m.renderListWindow(w, width, focused)
+	}
+	return m.renderChatWindow(w, width, focused)
 }
 
 // ----- Auth ---------------------------------------------------------------
@@ -73,7 +143,6 @@ func (m Model) viewOverlay() string {
 	lines := make([]string, 0, m.heightOrDefault())
 	lines = append(lines, chatTitleStyle.Render(":buffers"))
 	lines = append(lines, m.overlay...)
-	// pad to height-1, then footer
 	for len(lines) < m.heightOrDefault()-1 {
 		lines = append(lines, "")
 	}
@@ -84,12 +153,12 @@ func (m Model) viewOverlay() string {
 	return strings.Join(lines, "\n")
 }
 
-// bufferListLines renders the :ls table for the current window.
+// bufferListLines renders the :ls table for the focused window.
 func (m Model) bufferListLines() []string {
 	w := m.activeWindow()
 	out := make([]string, 0, len(m.buffers.list))
 	for _, b := range m.buffers.list {
-		flags := []byte("   ") // [current/alt][active][space]
+		flags := []byte("   ")
 		if b.id == w.bufferID {
 			flags[0] = '%'
 			flags[1] = 'a'
@@ -101,29 +170,25 @@ func (m Model) bufferListLines() []string {
 	return out
 }
 
-// ----- Chat list buffer ---------------------------------------------------
+// ----- Chat list window ---------------------------------------------------
 
-// viewChatListBuffer renders exactly `height` lines: header(1) + body + status(1).
-func (m Model) viewChatListBuffer() string {
-	lines := make([]string, 0, m.heightOrDefault())
-	lines = append(lines, m.viewChatListHeader())
-	lines = append(lines, m.viewChatListBody()...)
-	lines = append(lines, m.statusLine())
-	return strings.Join(lines, "\n")
+func (m Model) renderListWindow(w *window, width int, focused bool) []string {
+	rows := make([]string, 0, m.heightOrDefault()-1)
+	rows = append(rows, m.listHeader(w, width, focused))
+	rows = append(rows, m.listBody(w, width)...)
+	return rows
 }
 
-func (m Model) viewChatListHeader() string {
+func (m Model) listHeader(w *window, width int, focused bool) string {
 	header := fmt.Sprintf("Chats · %s", m.self.DisplayName())
 	if len(m.dialogs) > 0 {
-		header += fmt.Sprintf("  (%d/%d)", m.activeWindow().cursor+1, len(m.dialogs))
+		header += fmt.Sprintf("  (%d/%d)", w.cursor+1, len(m.dialogs))
 	}
-	return chatTitleStyle.Render(truncRunes(header, m.widthOrDefault()))
+	return titleStyleFor(focused).Render(truncRunes(header, width))
 }
 
-// viewChatListBody returns exactly visibleRows() lines, top-anchored.
-func (m Model) viewChatListBody() []string {
+func (m Model) listBody(w *window, width int) []string {
 	rows := m.visibleRows()
-	w := m.activeWindow()
 	out := make([]string, 0, rows)
 
 	if len(m.dialogs) == 0 {
@@ -134,23 +199,21 @@ func (m Model) viewChatListBody() []string {
 			end = len(m.dialogs)
 		}
 		for i := w.listOffset; i < end; i++ {
-			out = append(out, m.renderDialogRow(i, i == w.cursor))
+			out = append(out, m.renderDialogRow(i, i == w.cursor, width))
 		}
 	}
-
 	for len(out) < rows {
 		out = append(out, "")
 	}
 	return out[:rows]
 }
 
-func (m Model) renderDialogRow(idx int, selected bool) string {
+func (m Model) renderDialogRow(idx int, selected bool, width int) string {
 	d := m.dialogs[idx]
 	chip := dialogChip(d.Kind)
-	title := titleOrFallback(d.Title)
-	titleCol := dialogTitleStyle.Render(truncRunes(title, 28))
+	titleCol := dialogTitleStyle.Render(truncRunes(titleOrFallback(d.Title), 28))
 
-	previewWidth := clampMin(m.width-2-8-30-8, 10)
+	previewWidth := clampMin(width-2-8-30-8, 8)
 	preview := dimStyle.Render(truncRunes(singleLine(d.LastMsg), previewWidth))
 
 	prefix := "  "
@@ -185,47 +248,35 @@ func titleOrFallback(t string) string {
 	return t
 }
 
-// ----- Chat buffer --------------------------------------------------------
+// ----- Chat window --------------------------------------------------------
 
-// viewChatBuffer builds the chat screen as exactly `height` lines:
-//
-//	header(1) + body(height-3) + input(1) + status(1)
-func (m Model) viewChatBuffer() string {
-	lines := make([]string, 0, m.heightOrDefault())
-	lines = append(lines, m.viewChatHeader())
-	lines = append(lines, m.viewChatBody()...)
-	lines = append(lines, m.viewChatInput())
-	lines = append(lines, m.statusLine())
-	return strings.Join(lines, "\n")
+func (m Model) renderChatWindow(w *window, width int, focused bool) []string {
+	b := m.bufferOf(w)
+	rows := make([]string, 0, m.heightOrDefault()-1)
+	rows = append(rows, m.chatHeader(b, width, focused))
+	rows = append(rows, m.chatBody(b, w, width)...)
+	rows = append(rows, m.chatInputLine(b, focused))
+	return rows
 }
 
-func (m Model) viewChatHeader() string {
-	b := m.activeBuffer()
+func (m Model) chatHeader(b *buffer, width int, focused bool) string {
 	rawPrefix := "[" + string(b.kindLabel) + "] "
-
-	statusRaw, statusStyled := m.chatStatusLabel()
-
-	// Truncate the title so the whole header stays on a single terminal line.
-	avail := clampMin(m.widthOrDefault()-len(rawPrefix)-len(statusRaw), 1)
+	statusRaw, statusStyled := m.chatStatusLabel(b)
+	avail := clampMin(width-len(rawPrefix)-len(statusRaw), 1)
 	title := truncRunes(b.name, avail)
-
-	return dimStyle.Render(rawPrefix) + chatTitleStyle.Render(title) + statusStyled
+	return dimStyle.Render(rawPrefix) + titleStyleFor(focused).Render(title) + statusStyled
 }
 
-// chatStatusLabel returns the presence label for the active DM buffer, both as
-// raw text (for width math) and styled (for display).
-func (m Model) chatStatusLabel() (raw, styled string) {
-	b := m.activeBuffer()
+// chatStatusLabel returns the presence label for a DM buffer.
+func (m Model) chatStatusLabel(b *buffer) (raw, styled string) {
 	if b.kindLabel != app.KindDM || b.userID == 0 {
 		return "", ""
 	}
 	uid := b.userID
-
 	if until, ok := m.typingUntil[uid]; ok && time.Now().Before(until) {
 		raw = " (typing...)"
 		return raw, statusTypingStyle.Render(raw)
 	}
-
 	switch m.statuses[uid] {
 	case app.StatusOnline:
 		raw = " (online)"
@@ -238,36 +289,39 @@ func (m Model) chatStatusLabel() (raw, styled string) {
 	}
 }
 
-// viewChatBody returns exactly chatBodyHeight lines for the message area.
-func (m Model) viewChatBody() []string {
-	b := m.activeBuffer()
+// chatBody returns exactly chatBodyHeight lines for the window's message area.
+func (m Model) chatBody(b *buffer, w *window, width int) []string {
 	if b.loadingMsg {
 		return m.padBody([]string{m.spin.View() + " Loading messages..."})
 	}
 	if len(b.messages) == 0 {
 		return m.padBody([]string{dimStyle.Render("(empty)")})
 	}
-	return m.chatViewport()
+	return m.chatViewport(b, w, width)
 }
 
-func (m Model) chatAndSelfName() (string, string) {
-	chat := m.activeBuffer().name
+// chatNames returns the chat title and the user's own display name for a buffer.
+func (m Model) chatNames(b *buffer) (string, string) {
 	self := m.self.DisplayName()
 	if self == "you" {
 		self = "You"
 	}
-	return chat, self
+	return b.name, self
 }
 
-func (m Model) viewChatInput() string {
-	b := m.activeBuffer()
+// chatInputLine renders the compose line. Only the focused window shows the
+// live input widget; others show their buffer's saved draft.
+func (m Model) chatInputLine(b *buffer, focused bool) string {
 	if b.sending {
 		return m.spin.View() + " Sending..."
 	}
-	if m.vimMode == app.ModeEdit {
+	if focused && m.vimMode == app.ModeEdit {
 		return m.msgInput.View()
 	}
-	val := m.msgInput.Value()
+	val := b.draft
+	if focused {
+		val = m.msgInput.Value()
+	}
 	if val == "" {
 		return dimStyle.Render("(press 'a' to type)")
 	}
@@ -276,9 +330,8 @@ func (m Model) viewChatInput() string {
 
 // ----- Status line --------------------------------------------------------
 
-// statusLine is the single bottom line carrying the mode badge. Like vim, it
-// shows no keybinding hints — only the mode, plus the command buffer while
-// typing a ":" command, or an error when one occurred.
+// statusLine is the single global bottom line: the mode badge, plus the
+// command buffer while typing a ":" command, or an error.
 func (m Model) statusLine() string {
 	badge := m.renderModeBadge()
 	switch {
@@ -303,6 +356,14 @@ func (m Model) renderModeBadge() string {
 }
 
 // ----- Utilities used by views --------------------------------------------
+
+// titleStyleFor highlights a window title when its window is focused.
+func titleStyleFor(focused bool) lipgloss.Style {
+	if focused {
+		return chatTitleStyle
+	}
+	return dimStyle
+}
 
 func truncRunes(s string, n int) string {
 	r := []rune(s)

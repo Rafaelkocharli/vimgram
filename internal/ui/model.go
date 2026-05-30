@@ -25,10 +25,12 @@ type Model struct {
 	authState app.AuthState
 	cmdBuf    string
 
-	// Buffers (loaded chats + the chat list) and the single MVP window.
-	buffers *bufferStore
-	win     *window
-	overlay []string // non-empty => :ls buffer-list overlay is shown
+	// Buffers (loaded chats + the chat list) and the windows showing them.
+	buffers      *bufferStore
+	wins         []*window
+	focused      int
+	pendingCtrlW bool     // true after <C-w>, awaiting the direction key
+	overlay      []string // non-empty => :ls buffer-list overlay is shown
 
 	// Self + dialog list (global Telegram state, rendered by the Chats buffer).
 	self    app.Self
@@ -49,11 +51,14 @@ type Model struct {
 	width, height int
 }
 
-// activeWindow returns the focused window (single one in the MVP).
-func (m Model) activeWindow() *window { return m.win }
+// activeWindow returns the focused window.
+func (m Model) activeWindow() *window { return m.wins[m.focused] }
 
 // activeBuffer returns the buffer shown in the focused window.
-func (m Model) activeBuffer() *buffer { return m.buffers.find(m.win.bufferID) }
+func (m Model) activeBuffer() *buffer { return m.buffers.find(m.activeWindow().bufferID) }
+
+// bufferOf returns the buffer a given window points at.
+func (m Model) bufferOf(w *window) *buffer { return m.buffers.find(w.bufferID) }
 
 // NewModel constructs a Model with all widgets initialized.
 func NewModel(client *telegram.Client, cancel context.CancelFunc, answers chan string) Model {
@@ -81,7 +86,8 @@ func NewModel(client *telegram.Client, cancel context.CancelFunc, answers chan s
 		statuses:      make(map[int64]app.UserStatus),
 		typingUntil:   make(map[int64]time.Time),
 		buffers:       store,
-		win:           &window{bufferID: chatListBufferID},
+		wins:          []*window{{bufferID: chatListBufferID}},
+		focused:       0,
 	}
 }
 

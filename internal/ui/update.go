@@ -88,10 +88,47 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.overlay = nil
 		return m, nil
 	}
+	// Window navigation chord: <C-w> then h / l / w.
+	if m.pendingCtrlW {
+		m.pendingCtrlW = false
+		m.focusWindow(msg.String())
+		return m, nil
+	}
+	if m.vimMode == app.ModeVisual && msg.String() == "ctrl+w" {
+		m.pendingCtrlW = true
+		return m, nil
+	}
 	if m.activeBuffer().kind == bufChatList {
 		return m.updateChatList(msg)
 	}
 	return m.updateChat(msg)
+}
+
+// focusWindow handles the key following <C-w>, moving focus between windows.
+// The compose draft follows focus: it is saved to the window we leave and the
+// new window's chat draft is loaded into the shared input widget.
+func (m *Model) focusWindow(key string) {
+	n := len(m.wins)
+	prev := m.focused
+	switch key {
+	case "h", "left":
+		if m.focused > 0 {
+			m.focused--
+		}
+	case "l", "right":
+		if m.focused < n-1 {
+			m.focused++
+		}
+	case "w":
+		m.focused = (m.focused + 1) % n
+	}
+	if m.focused == prev {
+		return
+	}
+	if b := m.bufferOf(m.wins[prev]); b != nil && b.kind == bufChat {
+		b.draft = m.msgInput.Value()
+	}
+	m.syncInputToActive()
 }
 
 // ----- Auth screen --------------------------------------------------------
@@ -208,8 +245,8 @@ func (m Model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateChatVisual(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	height := m.chatBodyHeight()
-	maxOffset := m.maxLineOffset()
 	w := m.activeWindow()
+	maxOffset := m.maxLineOffset(m.activeBuffer(), w.width)
 
 	switch msg.String() {
 	case ":":
@@ -331,29 +368,41 @@ func (m *Model) exitCommandMode(buf string) {
 func (m Model) executeCommand(raw string) (tea.Model, tea.Cmd) {
 	cmd := app.ParseCommand(raw)
 	switch cmd.Kind {
-	case app.CmdQuit, app.CmdQuitForce:
-		// MVP: a single window, so :q behaves like quit. Phase 2 will close
-		// the focused window when more than one exists.
+	case app.CmdQuit:
+		// With multiple windows :q closes the focused one; otherwise it quits.
+		if len(m.wins) > 1 {
+			return m.closeWindow(), nil
+		}
 		m.cancel()
 		return m, tea.Quit
+	case app.CmdQuitForce:
+		m.cancel()
+		return m, tea.Quit
+	case app.CmdClose:
+		if len(m.wins) > 1 {
+			return m.closeWindow(), nil
+		}
+		return m, nil // cannot close the last window
+	case app.CmdVSplit:
+		return m.splitVertical(cmd.Arg), nil
 	case app.CmdBuffers:
 		m.overlay = m.bufferListLines()
 		return m, nil
 	case app.CmdBufferSwitch:
 		return m.switchByID(parseID(cmd.Arg)), nil
 	case app.CmdBufferAlt:
-		if m.win.altBuffer != 0 && m.buffers.find(m.win.altBuffer) != nil {
-			m.switchBuffer(m.win.altBuffer)
+		if m.activeWindow().altBuffer != 0 && m.buffers.find(m.activeWindow().altBuffer) != nil {
+			m.switchBuffer(m.activeWindow().altBuffer)
 		}
 		return m, nil
 	case app.CmdBufferNext:
-		m.switchBuffer(m.buffers.next(m.win.bufferID))
+		m.switchBuffer(m.buffers.next(m.activeWindow().bufferID))
 		return m, nil
 	case app.CmdBufferPrev:
-		m.switchBuffer(m.buffers.prev(m.win.bufferID))
+		m.switchBuffer(m.buffers.prev(m.activeWindow().bufferID))
 		return m, nil
 	case app.CmdBufferDelete:
-		id := m.win.bufferID
+		id := m.activeWindow().bufferID
 		if cmd.HasArg {
 			id = parseID(cmd.Arg)
 		}
@@ -377,19 +426,19 @@ func (m Model) switchByID(id int) Model {
 // switchBuffer points the active window at buffer id, preserving the draft of
 // the buffer we leave and restoring the target's draft.
 func (m *Model) switchBuffer(id int) {
-	if id == m.win.bufferID || m.buffers.find(id) == nil {
+	if id == m.activeWindow().bufferID || m.buffers.find(id) == nil {
 		return
 	}
 	// Save the current chat buffer's draft.
 	if cur := m.activeBuffer(); cur != nil && cur.kind == bufChat {
 		cur.draft = m.msgInput.Value()
 	}
-	m.win.altBuffer = m.win.bufferID
-	m.win.bufferID = id
+	m.activeWindow().altBuffer = m.activeWindow().bufferID
+	m.activeWindow().bufferID = id
 	// Reset this window's viewport for the new buffer.
-	m.win.lineOffset = 0
-	m.win.cursor = 0
-	m.win.listOffset = 0
+	m.activeWindow().lineOffset = 0
+	m.activeWindow().cursor = 0
+	m.activeWindow().listOffset = 0
 	m.vimMode = app.ModeVisual
 	m.err = nil
 
@@ -414,28 +463,70 @@ func (m Model) deleteBuffer(id int) Model {
 		return m
 	}
 
-	visible := m.win.bufferID == id
-	fallback := m.win.altBuffer
-	if fallback == id || m.buffers.find(fallback) == nil {
-		fallback = chatListBufferID
-	}
-
 	m.buffers.delete(id)
-	if m.win.altBuffer == id {
-		m.win.altBuffer = 0
-	}
-	if visible {
-		// Switch directly (avoid switchBuffer saving a now-deleted draft).
-		m.win.bufferID = fallback
-		m.win.lineOffset, m.win.cursor, m.win.listOffset = 0, 0, 0
-		m.vimMode = app.ModeVisual
-		if b := m.activeBuffer(); b != nil && b.kind == bufChat {
-			m.msgInput.SetValue(b.draft)
-		} else {
-			m.msgInput.SetValue("")
+
+	// Repoint every window that referenced the deleted buffer.
+	for _, w := range m.wins {
+		if w.altBuffer == id {
+			w.altBuffer = 0
 		}
-		m.msgInput.Blur()
+		if w.bufferID == id {
+			fallback := w.altBuffer
+			if fallback == 0 || m.buffers.find(fallback) == nil {
+				fallback = chatListBufferID
+			}
+			w.bufferID = fallback
+			w.lineOffset, w.cursor, w.listOffset = 0, 0, 0
+		}
 	}
+	m.vimMode = app.ModeVisual
+	m.syncInputToActive()
+	return m
+}
+
+// syncInputToActive loads the focused chat buffer's draft into the compose
+// widget (or clears it for the chat list), and blurs it.
+func (m *Model) syncInputToActive() {
+	if b := m.activeBuffer(); b != nil && b.kind == bufChat {
+		m.msgInput.SetValue(b.draft)
+	} else {
+		m.msgInput.SetValue("")
+	}
+	m.msgInput.Blur()
+}
+
+// splitVertical inserts a new window just to the right of the focused one.
+// Focus stays on the current (left) window, matching the spec workflow.
+// arg: empty => same buffer; numeric => buffer id; "chats" => the chat list.
+func (m Model) splitVertical(arg string) Model {
+	target := m.activeWindow().bufferID
+	if arg != "" {
+		if strings.EqualFold(arg, "chats") {
+			target = chatListBufferID
+		} else if id := parseID(arg); id > 0 && m.buffers.find(id) != nil {
+			target = id
+		} else {
+			m.err = &unknownCmdError{cmd: "vs " + arg}
+			return m
+		}
+	}
+	w := &window{bufferID: target}
+	idx := m.focused + 1
+	m.wins = append(m.wins, nil)
+	copy(m.wins[idx+1:], m.wins[idx:])
+	m.wins[idx] = w
+	// focus stays on the current (left) window
+	return m
+}
+
+// closeWindow removes the focused window (callers ensure len(wins) > 1).
+func (m Model) closeWindow() Model {
+	m.wins = append(m.wins[:m.focused], m.wins[m.focused+1:]...)
+	if m.focused >= len(m.wins) {
+		m.focused = len(m.wins) - 1
+	}
+	m.vimMode = app.ModeVisual
+	m.syncInputToActive()
 	return m
 }
 
@@ -450,9 +541,9 @@ func (m Model) handleTelegramEvent(e telegram.Event) (tea.Model, tea.Cmd) {
 		m.self = ev.Self
 		m.dialogs = ev.Dialogs
 		m.authed = true
-		m.win.bufferID = chatListBufferID
-		m.win.cursor = 0
-		m.win.listOffset = 0
+		m.activeWindow().bufferID = chatListBufferID
+		m.activeWindow().cursor = 0
+		m.activeWindow().listOffset = 0
 		m.authInput.Blur()
 		m.seedStatuses(ev.Dialogs)
 		return m, nil
@@ -524,9 +615,9 @@ func (m Model) prependMessages(peerKey string, prefix []app.Message, hasMore boo
 	b.messages = append(prefix, b.messages...)
 	b.msgVersion++
 	// Clamp the active window only if it shows this buffer.
-	if m.win.bufferID == b.id {
-		if max := m.maxLineOffset(); m.win.lineOffset > max {
-			m.win.lineOffset = max
+	if w := m.activeWindow(); w.bufferID == b.id {
+		if max := m.maxLineOffset(b, w.width); w.lineOffset > max {
+			w.lineOffset = max
 		}
 	}
 	return m
@@ -534,11 +625,11 @@ func (m Model) prependMessages(peerKey string, prefix []app.Message, hasMore boo
 
 func (m Model) onIncomingMessage(peerKey string, msg app.Message) Model {
 	buf := m.buffers.findByPeer(peerKey)
-	isActiveChat := buf != nil && m.win.bufferID == buf.id
+	isActiveChat := buf != nil && m.activeWindow().bufferID == buf.id
 
 	// 1) append to the chat buffer (loaded but maybe not visible)
 	if buf != nil {
-		wasAtBottom := isActiveChat && m.win.lineOffset == 0
+		wasAtBottom := isActiveChat && m.activeWindow().lineOffset == 0
 		addedLines := 0
 		if isActiveChat && !wasAtBottom {
 			addedLines = m.renderedLineCount(msg)
@@ -547,7 +638,7 @@ func (m Model) onIncomingMessage(peerKey string, msg app.Message) Model {
 		buf.msgVersion++
 		// Keep a scrolled-up active window stable.
 		if isActiveChat && !wasAtBottom {
-			m.win.lineOffset += addedLines
+			m.activeWindow().lineOffset += addedLines
 		}
 	}
 
@@ -565,11 +656,11 @@ func (m Model) onIncomingMessage(peerKey string, msg app.Message) Model {
 	return m
 }
 
-// renderedLineCount returns how many visual lines a message occupies at the
-// current width.
+// renderedLineCount returns how many visual lines a message occupies in the
+// active window.
 func (m Model) renderedLineCount(msg app.Message) int {
-	chatName, selfName := m.chatAndSelfName()
-	return strings.Count(renderMessage(msg, chatName, selfName, m.width), "\n") + 1
+	chatName, selfName := m.chatNames(m.activeBuffer())
+	return strings.Count(renderMessage(msg, chatName, selfName, m.activeWindow().width), "\n") + 1
 }
 
 func indexOfDialog(dialogs []app.Dialog, key string) int {
