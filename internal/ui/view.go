@@ -76,11 +76,7 @@ func (m Model) viewChatList() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(m.viewStatusLine(chatListHints))
-	if m.err != nil {
-		b.WriteString("\n")
-		b.WriteString(errorStyle.Render("Error: " + m.err.Error()))
-	}
+	b.WriteString(m.statusLine())
 	return b.String()
 }
 
@@ -154,7 +150,7 @@ func (m Model) viewChat() string {
 	lines = append(lines, m.viewChatHeader())
 	lines = append(lines, m.viewChatBody()...)
 	lines = append(lines, m.viewChatInput())
-	lines = append(lines, m.viewChatStatusLine())
+	lines = append(lines, m.statusLine())
 	return strings.Join(lines, "\n")
 }
 
@@ -213,42 +209,21 @@ func (m Model) viewChatInput() string {
 	return dimStyle.Render(truncRunes("> "+val, m.widthOrDefault()))
 }
 
-func (m Model) chatHints() string {
-	if m.vimMode == app.ModeEdit {
-		return "enter — send · esc — visual"
-	}
-	return "a — insert · j/k pgup/pgdn — scroll · g/G — edge · : — command (:q back, :wq/:qa quit)"
-}
+// ----- Status line --------------------------------------------------------
 
-const chatListHints = "j/k — move · g/G — edge · enter — open · : — command (:q :wq :qa)"
-
-// ----- Status line (mode badge + hints / command line) -------------------
-
-// viewChatStatusLine is the single bottom line of the chat screen. It shows
-// the mode badge plus, depending on state, the command buffer, an error, or
-// the keybinding hints — but is always exactly one line.
-func (m Model) viewChatStatusLine() string {
+// statusLine is the single bottom line carrying the mode badge. Like vim, it
+// shows no keybinding hints — only the mode, plus the command buffer while
+// typing a ":" command, or an error when one occurred.
+func (m Model) statusLine() string {
 	badge := m.renderModeBadge()
-	var tail string
 	switch {
 	case m.vimMode == app.ModeCommand:
-		tail = cmdLineStyle.Render(":" + m.cmdBuf + "█")
+		return badge + "  " + cmdLineStyle.Render(":"+m.cmdBuf+"█")
 	case m.err != nil:
-		tail = errorStyle.Render("Error: " + m.err.Error())
+		return badge + "  " + errorStyle.Render("Error: "+m.err.Error())
 	default:
-		// dimStyle (no top margin) keeps this on a single line.
-		tail = dimStyle.Render(m.chatHints())
+		return badge
 	}
-	return badge + "  " + tail
-}
-
-func (m Model) viewStatusLine(hints string) string {
-	badge := m.renderModeBadge()
-	tail := footerStyle.Render(hints)
-	if m.vimMode == app.ModeCommand {
-		tail = cmdLineStyle.Render(":" + m.cmdBuf + "█")
-	}
-	return badge + "  " + tail
 }
 
 func (m Model) renderModeBadge() string {
