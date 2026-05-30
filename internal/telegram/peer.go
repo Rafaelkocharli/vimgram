@@ -4,18 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gotd/td/tg"
-
-	"vimgram/internal/app"
 )
-
-// PeerRefKey returns the stable key for an opaque PeerRef coming from the
-// app layer. Safe because all PeerRefs we hand out are tg.InputPeerClass.
-func PeerRefKey(p app.PeerRef) string {
-	if ip, ok := p.(tg.InputPeerClass); ok {
-		return InputPeerKey(ip)
-	}
-	return ""
-}
 
 // PeerKey returns a stable string key for a Peer (used to match updates
 // against dialogs).

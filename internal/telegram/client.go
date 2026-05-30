@@ -28,16 +28,19 @@ type (
 	}
 	// EventMessagesLoaded fires after history is loaded for a chat.
 	EventMessagesLoaded struct {
+		PeerKey  string
 		Messages []app.Message
 		HasMore  bool
 	}
 	// EventMessagesPrepended fires after older history is fetched.
 	EventMessagesPrepended struct {
+		PeerKey  string
 		Messages []app.Message
 		HasMore  bool
 	}
 	// EventMessageSent fires after an outgoing message attempt completes.
 	EventMessageSent struct {
+		PeerKey string
 		Message app.Message
 		Err     error
 	}
@@ -210,17 +213,17 @@ func (c *Client) handleRequest(ctx context.Context, tgc *telegram.Client, req an
 			c.emit(EventError{Err: err})
 			return
 		}
-		c.emit(EventMessagesLoaded{Messages: msgs, HasMore: more})
+		c.emit(EventMessagesLoaded{PeerKey: InputPeerKey(r.peer), Messages: msgs, HasMore: more})
 	case loadMoreReq:
 		msgs, more, err := fetchHistory(ctx, tgc, r.peer, r.beforeID, historyPageSize)
 		if err != nil {
 			c.emit(EventError{Err: err})
 			return
 		}
-		c.emit(EventMessagesPrepended{Messages: msgs, HasMore: more})
+		c.emit(EventMessagesPrepended{PeerKey: InputPeerKey(r.peer), Messages: msgs, HasMore: more})
 	case sendMsgReq:
 		msg, err := sendMessage(ctx, tgc, r.peer, r.text, c.self)
-		c.emit(EventMessageSent{Message: msg, Err: err})
+		c.emit(EventMessageSent{PeerKey: InputPeerKey(r.peer), Message: msg, Err: err})
 	}
 }
 

@@ -20,35 +20,23 @@ type Model struct {
 	cancel context.CancelFunc
 
 	// Domain state
-	screen    app.Screen
+	authed    bool // true once signed in and the chat list is loaded
 	vimMode   app.VimMode
 	authState app.AuthState
 	cmdBuf    string
 
-	// Self + chat list
-	self       app.Self
-	dialogs    []app.Dialog
-	cursor     int
-	listOffset int
+	// Buffers (loaded chats + the chat list) and the single MVP window.
+	buffers *bufferStore
+	win     *window
+	overlay []string // non-empty => :ls buffer-list overlay is shown
+
+	// Self + dialog list (global Telegram state, rendered by the Chats buffer).
+	self    app.Self
+	dialogs []app.Dialog
 
 	// Presence: per-user online state and typing expiry timestamps.
 	statuses    map[int64]app.UserStatus
 	typingUntil map[int64]time.Time
-
-	// Chat view
-	selected    *app.Dialog
-	messages    []app.Message
-	lineOffset  int // scroll position in visual lines from the bottom (0 = newest)
-	loadingMsg  bool
-	loadingMore bool
-	hasMore     bool
-	sending     bool
-
-	// Render memoization for the (potentially large) message history.
-	// chatCache is a pointer so writes survive bubbletea's value-copy of the
-	// model. msgVersion is bumped whenever `messages` is reassigned.
-	chatCache  *chatCache
-	msgVersion int
 
 	// Widgets
 	authInput textinput.Model
@@ -60,6 +48,12 @@ type Model struct {
 	err           error
 	width, height int
 }
+
+// activeWindow returns the focused window (single one in the MVP).
+func (m Model) activeWindow() *window { return m.win }
+
+// activeBuffer returns the buffer shown in the focused window.
+func (m Model) activeBuffer() *buffer { return m.buffers.find(m.win.bufferID) }
 
 // NewModel constructs a Model with all widgets initialized.
 func NewModel(client *telegram.Client, cancel context.CancelFunc, answers chan string) Model {
@@ -75,10 +69,10 @@ func NewModel(client *telegram.Client, cancel context.CancelFunc, answers chan s
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
+	store := newBufferStore()
 	return Model{
 		client:        client,
 		cancel:        cancel,
-		screen:        app.ScreenAuth,
 		authState:     app.AuthConnecting,
 		authInput:     auth,
 		msgInput:      msg,
@@ -86,7 +80,8 @@ func NewModel(client *telegram.Client, cancel context.CancelFunc, answers chan s
 		promptAnswers: answers,
 		statuses:      make(map[int64]app.UserStatus),
 		typingUntil:   make(map[int64]time.Time),
-		chatCache:     &chatCache{},
+		buffers:       store,
+		win:           &window{bufferID: chatListBufferID},
 	}
 }
 

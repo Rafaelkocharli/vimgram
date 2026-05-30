@@ -4,15 +4,6 @@ package app
 
 import "time"
 
-// Screen identifies the top-level visible screen.
-type Screen int
-
-const (
-	ScreenAuth Screen = iota
-	ScreenChatList
-	ScreenChat
-)
-
 // VimMode is the editor-style modal state.
 type VimMode int
 

@@ -11,15 +11,21 @@ import (
 
 // View implements tea.Model.
 func (m Model) View() string {
-	switch m.screen {
-	case app.ScreenAuth:
+	if !m.authed {
 		return m.viewAuth()
-	case app.ScreenChatList:
-		return m.viewChatList()
-	case app.ScreenChat:
-		return m.viewChat()
 	}
-	return ""
+	if len(m.overlay) > 0 {
+		return m.viewOverlay()
+	}
+	return m.viewWindow()
+}
+
+// viewWindow renders the active window's buffer full-screen (MVP: one window).
+func (m Model) viewWindow() string {
+	if m.activeBuffer().kind == bufChatList {
+		return m.viewChatListBuffer()
+	}
+	return m.viewChatBuffer()
 }
 
 // ----- Auth ---------------------------------------------------------------
@@ -61,12 +67,44 @@ func (m Model) viewAuthFooter() string {
 	return footerStyle.Render("esc — quit")
 }
 
-// ----- Chat list ----------------------------------------------------------
+// ----- :ls overlay --------------------------------------------------------
 
-// viewChatList renders exactly `height` lines: header(1) + body + status(1),
-// so the status line stays pinned to the bottom — same row as on the chat
-// screen, eliminating the jump when switching between them.
-func (m Model) viewChatList() string {
+func (m Model) viewOverlay() string {
+	lines := make([]string, 0, m.heightOrDefault())
+	lines = append(lines, chatTitleStyle.Render(":buffers"))
+	lines = append(lines, m.overlay...)
+	// pad to height-1, then footer
+	for len(lines) < m.heightOrDefault()-1 {
+		lines = append(lines, "")
+	}
+	lines = append(lines, footerStyle.Render("press any key to close"))
+	if len(lines) > m.heightOrDefault() {
+		lines = lines[:m.heightOrDefault()]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// bufferListLines renders the :ls table for the current window.
+func (m Model) bufferListLines() []string {
+	w := m.activeWindow()
+	out := make([]string, 0, len(m.buffers.list))
+	for _, b := range m.buffers.list {
+		flags := []byte("   ") // [current/alt][active][space]
+		if b.id == w.bufferID {
+			flags[0] = '%'
+			flags[1] = 'a'
+		} else if b.id == w.altBuffer {
+			flags[0] = '#'
+		}
+		out = append(out, fmt.Sprintf("%3d %s %s", b.id, string(flags), b.name))
+	}
+	return out
+}
+
+// ----- Chat list buffer ---------------------------------------------------
+
+// viewChatListBuffer renders exactly `height` lines: header(1) + body + status(1).
+func (m Model) viewChatListBuffer() string {
 	lines := make([]string, 0, m.heightOrDefault())
 	lines = append(lines, m.viewChatListHeader())
 	lines = append(lines, m.viewChatListBody()...)
@@ -77,26 +115,26 @@ func (m Model) viewChatList() string {
 func (m Model) viewChatListHeader() string {
 	header := fmt.Sprintf("Chats · %s", m.self.DisplayName())
 	if len(m.dialogs) > 0 {
-		header += fmt.Sprintf("  (%d/%d)", m.cursor+1, len(m.dialogs))
+		header += fmt.Sprintf("  (%d/%d)", m.activeWindow().cursor+1, len(m.dialogs))
 	}
 	return chatTitleStyle.Render(truncRunes(header, m.widthOrDefault()))
 }
 
-// viewChatListBody returns exactly visibleRows() lines, top-anchored, padding
-// with blanks when there are fewer dialogs than fit.
+// viewChatListBody returns exactly visibleRows() lines, top-anchored.
 func (m Model) viewChatListBody() []string {
 	rows := m.visibleRows()
+	w := m.activeWindow()
 	out := make([]string, 0, rows)
 
 	if len(m.dialogs) == 0 {
 		out = append(out, dimStyle.Render("No chats"))
 	} else {
-		end := m.listOffset + rows
+		end := w.listOffset + rows
 		if end > len(m.dialogs) {
 			end = len(m.dialogs)
 		}
-		for i := m.listOffset; i < end; i++ {
-			out = append(out, m.renderDialogRow(i, i == m.cursor))
+		for i := w.listOffset; i < end; i++ {
+			out = append(out, m.renderDialogRow(i, i == w.cursor))
 		}
 	}
 
@@ -147,13 +185,12 @@ func titleOrFallback(t string) string {
 	return t
 }
 
-// ----- Chat view ----------------------------------------------------------
+// ----- Chat buffer --------------------------------------------------------
 
-// viewChat builds the chat screen as exactly `height` lines:
-//   header(1) + body(height-3) + input(1) + status(1)
-// The body is always padded to its full height, so the input and status line
-// stay pinned to the bottom and never jump as content changes.
-func (m Model) viewChat() string {
+// viewChatBuffer builds the chat screen as exactly `height` lines:
+//
+//	header(1) + body(height-3) + input(1) + status(1)
+func (m Model) viewChatBuffer() string {
 	lines := make([]string, 0, m.heightOrDefault())
 	lines = append(lines, m.viewChatHeader())
 	lines = append(lines, m.viewChatBody()...)
@@ -163,34 +200,26 @@ func (m Model) viewChat() string {
 }
 
 func (m Model) viewChatHeader() string {
-	title := "(chat)"
-	rawPrefix := ""
-	if m.selected != nil {
-		title = m.selected.Title
-		rawPrefix = "[" + string(m.selected.Kind) + "] "
-	}
+	b := m.activeBuffer()
+	rawPrefix := "[" + string(b.kindLabel) + "] "
 
 	statusRaw, statusStyled := m.chatStatusLabel()
 
 	// Truncate the title so the whole header stays on a single terminal line.
 	avail := clampMin(m.widthOrDefault()-len(rawPrefix)-len(statusRaw), 1)
-	title = truncRunes(title, avail)
+	title := truncRunes(b.name, avail)
 
-	prefix := ""
-	if rawPrefix != "" {
-		prefix = dimStyle.Render(rawPrefix)
-	}
-	return prefix + chatTitleStyle.Render(title) + statusStyled
+	return dimStyle.Render(rawPrefix) + chatTitleStyle.Render(title) + statusStyled
 }
 
-// chatStatusLabel returns the presence label for the open DM, both as raw
-// text (for width math) and styled (for display). Groups/channels and unknown
-// presence yield empty strings.
+// chatStatusLabel returns the presence label for the active DM buffer, both as
+// raw text (for width math) and styled (for display).
 func (m Model) chatStatusLabel() (raw, styled string) {
-	if m.selected == nil || m.selected.Kind != app.KindDM || m.selected.UserID == 0 {
+	b := m.activeBuffer()
+	if b.kindLabel != app.KindDM || b.userID == 0 {
 		return "", ""
 	}
-	uid := m.selected.UserID
+	uid := b.userID
 
 	if until, ok := m.typingUntil[uid]; ok && time.Now().Before(until) {
 		raw = " (typing...)"
@@ -211,20 +240,18 @@ func (m Model) chatStatusLabel() (raw, styled string) {
 
 // viewChatBody returns exactly chatBodyHeight lines for the message area.
 func (m Model) viewChatBody() []string {
-	if m.loadingMsg {
+	b := m.activeBuffer()
+	if b.loadingMsg {
 		return m.padBody([]string{m.spin.View() + " Loading messages..."})
 	}
-	if len(m.messages) == 0 {
+	if len(b.messages) == 0 {
 		return m.padBody([]string{dimStyle.Render("(empty)")})
 	}
 	return m.chatViewport()
 }
 
 func (m Model) chatAndSelfName() (string, string) {
-	chat := "(chat)"
-	if m.selected != nil {
-		chat = m.selected.Title
-	}
+	chat := m.activeBuffer().name
 	self := m.self.DisplayName()
 	if self == "you" {
 		self = "You"
@@ -233,7 +260,8 @@ func (m Model) chatAndSelfName() (string, string) {
 }
 
 func (m Model) viewChatInput() string {
-	if m.sending {
+	b := m.activeBuffer()
+	if b.sending {
 		return m.spin.View() + " Sending..."
 	}
 	if m.vimMode == app.ModeEdit {

@@ -16,36 +16,38 @@ type chatCache struct {
 	lines []string
 }
 
-// chatLines returns the flattened history (see computeChatLines), memoized.
+// chatLines returns the flattened history of the active chat buffer, memoized.
 // Rendering every message through lipgloss on each frame was the dominant
 // allocation source; the cache makes repeated frames essentially free.
 func (m Model) chatLines() []string {
+	b := m.activeBuffer()
 	// While loading older messages the top line animates a spinner, so the
 	// output changes every frame — skip the cache to keep it live.
-	if m.loadingMore {
-		return m.computeChatLines()
+	if b.loadingMore {
+		return m.computeChatLines(b)
 	}
-	key := chatCacheKey{version: m.msgVersion, width: m.width, hasMore: m.hasMore}
-	if m.chatCache.lines != nil && m.chatCache.key == key {
-		return m.chatCache.lines
+	key := chatCacheKey{version: b.msgVersion, width: m.width, hasMore: b.hasMore}
+	if b.cache != nil && b.cache.lines != nil && b.cache.key == key {
+		return b.cache.lines
 	}
-	lines := m.computeChatLines()
-	m.chatCache.key = key
-	m.chatCache.lines = lines
+	lines := m.computeChatLines(b)
+	if b.cache != nil {
+		b.cache.key = key
+		b.cache.lines = lines
+	}
 	return lines
 }
 
-// computeChatLines flattens the whole loaded history into a flat slice of
-// visual lines (one wrapped message can produce several). The first line is
-// always a "top of history" marker so that scrolling all the way up reveals
-// the load state. Scrolling operates on this flat list, giving true per-line
-// movement.
-func (m Model) computeChatLines() []string {
+// computeChatLines flattens the buffer's whole loaded history into a flat
+// slice of visual lines (one wrapped message can produce several). The first
+// line is always a "top of history" marker so that scrolling all the way up
+// reveals the load state.
+func (m Model) computeChatLines(b *buffer) []string {
 	chatName, selfName := m.chatAndSelfName()
 
-	lines := make([]string, 0, len(m.messages)+1)
-	lines = append(lines, m.historyTopLine())
-	for _, msg := range m.messages {
+	lines := make([]string, 0, len(b.messages)+1)
+	lines = append(lines, m.historyTopLine(b))
+	for _, msg := range b.messages {
 		rendered := renderMessage(msg, chatName, selfName, m.width)
 		lines = append(lines, strings.Split(rendered, "\n")...)
 	}
@@ -58,27 +60,26 @@ func (m Model) chatLineCount() int {
 }
 
 // historyTopLine is the single marker line shown above the oldest message.
-func (m Model) historyTopLine() string {
+func (m Model) historyTopLine(b *buffer) string {
 	switch {
-	case m.loadingMore:
+	case b.loadingMore:
 		return m.spin.View() + dimStyle.Render(" loading older messages...")
-	case !m.hasMore:
+	case !b.hasMore:
 		return dimStyle.Render("— start of chat —")
 	default:
 		return dimStyle.Render("↑ k — load older")
 	}
 }
 
-// chatViewport returns exactly chatBodyHeight lines for the message area,
-// bottom-anchored. When there is less content than the body height, blank
-// lines pad the top so messages sit just above the input — and, crucially, the
-// status line never moves.
+// chatViewport returns exactly chatBodyHeight lines for the message area of the
+// active window, bottom-anchored. When there is less content than the body
+// height, blank lines pad the top so messages sit just above the input.
 func (m Model) chatViewport() []string {
 	all := m.chatLines()
 	height := m.chatBodyHeight()
 	total := len(all)
 
-	bottom := total - m.lineOffset
+	bottom := total - m.activeWindow().lineOffset
 	if bottom > total {
 		bottom = total
 	}
@@ -96,7 +97,6 @@ func (m Model) chatViewport() []string {
 	}
 	win = append(win, all[top:bottom]...)
 
-	// Guard against rounding: always emit exactly `height` lines.
 	for len(win) < height {
 		win = append(win, "")
 	}
@@ -106,7 +106,7 @@ func (m Model) chatViewport() []string {
 	return win
 }
 
-// maxLineOffset is the furthest we can scroll up (top of history visible).
+// maxLineOffset is the furthest the active window can scroll up.
 func (m Model) maxLineOffset() int {
 	return clampMin(m.chatLineCount()-m.chatBodyHeight(), 0)
 }

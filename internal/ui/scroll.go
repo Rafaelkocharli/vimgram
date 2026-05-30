@@ -44,12 +44,14 @@ func (m *Model) widthOrDefault() int {
 	return 80
 }
 
+// adjustListOffset keeps the active window's chat-list cursor in view.
 func (m *Model) adjustListOffset() {
 	rows := m.visibleRows()
-	if m.cursor < m.listOffset {
-		m.listOffset = m.cursor
+	w := m.activeWindow()
+	if w.cursor < w.listOffset {
+		w.listOffset = w.cursor
 	}
-	if m.cursor >= m.listOffset+rows {
-		m.listOffset = m.cursor - rows + 1
+	if w.cursor >= w.listOffset+rows {
+		w.listOffset = w.cursor - rows + 1
 	}
 }
