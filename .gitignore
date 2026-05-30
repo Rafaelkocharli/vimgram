@@ -1,3 +1,5 @@
 .env
 session.json
 vimgram
+dist/
+.DS_Store
