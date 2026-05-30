@@ -30,6 +30,10 @@ var (
 	modeEditStyle    = modeBadgeStyle("#5fff87")
 	modeCommandStyle = modeBadgeStyle("#ffaf00")
 	cmdLineStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffd75f"))
+
+	statusOnlineStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#5fff87"))
+	statusTypingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffd75f"))
+	statusOfflineStyle = lipgloss.NewStyle().Faint(true)
 )
 
 func chipStyle(bg string) lipgloss.Style {

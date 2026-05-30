@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -29,6 +30,10 @@ type Model struct {
 	dialogs    []app.Dialog
 	cursor     int
 	listOffset int
+
+	// Presence: per-user online state and typing expiry timestamps.
+	statuses    map[int64]app.UserStatus
+	typingUntil map[int64]time.Time
 
 	// Chat view
 	selected    *app.Dialog
@@ -73,6 +78,8 @@ func NewModel(client *telegram.Client, cancel context.CancelFunc, answers chan s
 		msgInput:      msg,
 		spin:          sp,
 		promptAnswers: answers,
+		statuses:      make(map[int64]app.UserStatus),
+		typingUntil:   make(map[int64]time.Time),
 	}
 }
 

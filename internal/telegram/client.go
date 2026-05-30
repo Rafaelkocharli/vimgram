@@ -46,6 +46,15 @@ type (
 		PeerKey string
 		Message app.Message
 	}
+	// EventUserStatus fires when a user's online presence changes.
+	EventUserStatus struct {
+		UserID int64
+		Status app.UserStatus
+	}
+	// EventUserTyping fires when a user starts typing in a DM.
+	EventUserTyping struct {
+		UserID int64
+	}
 	// EventError signals a non-fatal background error.
 	EventError struct{ Err error }
 )
@@ -56,6 +65,8 @@ func (EventMessagesLoaded) isEvent()    {}
 func (EventMessagesPrepended) isEvent() {}
 func (EventMessageSent) isEvent()       {}
 func (EventMessageReceived) isEvent()   {}
+func (EventUserStatus) isEvent()        {}
+func (EventUserTyping) isEvent()        {}
 func (EventError) isEvent()             {}
 
 // Client is the high-level Telegram facade used by the UI.
@@ -126,8 +137,16 @@ func (c *Client) Run(ctx context.Context) error {
 
 	rand.Seed(time.Now().UnixNano())
 
-	dispatcher := buildDispatcher(func(peerKey string, m app.Message) {
-		c.emit(EventMessageReceived{PeerKey: peerKey, Message: m})
+	dispatcher := buildDispatcher(updateHandlers{
+		onMessage: func(peerKey string, m app.Message) {
+			c.emit(EventMessageReceived{PeerKey: peerKey, Message: m})
+		},
+		onStatus: func(userID int64, status app.UserStatus) {
+			c.emit(EventUserStatus{UserID: userID, Status: status})
+		},
+		onTyping: func(userID int64) {
+			c.emit(EventUserTyping{UserID: userID})
+		},
 	})
 
 	tgc := telegram.NewClient(c.appID, c.appHash, telegram.Options{

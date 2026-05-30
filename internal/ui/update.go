@@ -3,6 +3,7 @@ package ui
 import (
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -359,6 +360,7 @@ func (m Model) handleTelegramEvent(e telegram.Event) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 		m.listOffset = 0
 		m.authInput.Blur()
+		m.seedStatuses(ev.Dialogs)
 		return m, nil
 	case telegram.EventMessagesLoaded:
 		m.messages = ev.Messages
@@ -377,11 +379,34 @@ func (m Model) handleTelegramEvent(e telegram.Event) (tea.Model, tea.Cmd) {
 		return m, nil
 	case telegram.EventMessageReceived:
 		return m.onIncomingMessage(ev.PeerKey, ev.Message), nil
+	case telegram.EventUserStatus:
+		if ev.Status != app.StatusUnknown {
+			m.statuses[ev.UserID] = ev.Status
+		}
+		delete(m.typingUntil, ev.UserID)
+		return m, nil
+	case telegram.EventUserTyping:
+		m.typingUntil[ev.UserID] = time.Now().Add(typingTTL)
+		return m, nil
 	case telegram.EventError:
 		m.err = ev.Err
 		return m, nil
 	}
 	return m, nil
+}
+
+// typingTTL is how long a "typing..." indicator stays lit after the last
+// typing update from a user. Telegram resends typing actions every few
+// seconds while the user keeps composing.
+const typingTTL = 6 * time.Second
+
+// seedStatuses primes the presence map from the initial dialog snapshot.
+func (m *Model) seedStatuses(dialogs []app.Dialog) {
+	for _, d := range dialogs {
+		if d.UserID != 0 && d.Status != app.StatusUnknown {
+			m.statuses[d.UserID] = d.Status
+		}
+	}
 }
 
 func (m Model) prependMessages(prefix []app.Message, hasMore bool) Model {

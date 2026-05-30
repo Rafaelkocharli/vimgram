@@ -183,6 +183,8 @@ func buildDialogEntry(
 		if entry.Title == "" {
 			entry.Title = "(no name)"
 		}
+		entry.UserID = u.ID
+		entry.Status = mapStatus(u.Status)
 		entry.Peer = &tg.InputPeerUser{UserID: u.ID, AccessHash: u.AccessHash}
 	case *tg.PeerChat:
 		c, ok := chats[p.ChatID]

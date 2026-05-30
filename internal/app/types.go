@@ -59,12 +59,23 @@ const (
 // pass it back unchanged when requesting actions on this peer.
 type PeerRef any
 
+// UserStatus is a simplified presence state for a user.
+type UserStatus int
+
+const (
+	StatusUnknown UserStatus = iota
+	StatusOnline
+	StatusOffline
+)
+
 // Dialog is one row in the chat list.
 type Dialog struct {
 	Key      string // stable identifier (peer kind + id)
 	Title    string
 	Kind     DialogKind
 	Peer     PeerRef
+	UserID   int64      // the peer's user id for DMs; 0 otherwise
+	Status   UserStatus // initial presence for DMs
 	LastMsg  string
 	LastDate int // unix seconds
 	Unread   int

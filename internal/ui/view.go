@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -170,15 +171,44 @@ func (m Model) viewChatHeader() string {
 		title = m.selected.Title
 		rawPrefix = "[" + string(m.selected.Kind) + "] "
 	}
-	// Truncate so the header is always a single terminal line.
-	avail := clampMin(m.widthOrDefault()-len(rawPrefix), 1)
+
+	statusRaw, statusStyled := m.chatStatusLabel()
+
+	// Truncate the title so the whole header stays on a single terminal line.
+	avail := clampMin(m.widthOrDefault()-len(rawPrefix)-len(statusRaw), 1)
 	title = truncRunes(title, avail)
 
 	prefix := ""
 	if rawPrefix != "" {
 		prefix = dimStyle.Render(rawPrefix)
 	}
-	return prefix + chatTitleStyle.Render(title)
+	return prefix + chatTitleStyle.Render(title) + statusStyled
+}
+
+// chatStatusLabel returns the presence label for the open DM, both as raw
+// text (for width math) and styled (for display). Groups/channels and unknown
+// presence yield empty strings.
+func (m Model) chatStatusLabel() (raw, styled string) {
+	if m.selected == nil || m.selected.Kind != app.KindDM || m.selected.UserID == 0 {
+		return "", ""
+	}
+	uid := m.selected.UserID
+
+	if until, ok := m.typingUntil[uid]; ok && time.Now().Before(until) {
+		raw = " (typing...)"
+		return raw, statusTypingStyle.Render(raw)
+	}
+
+	switch m.statuses[uid] {
+	case app.StatusOnline:
+		raw = " (online)"
+		return raw, statusOnlineStyle.Render(raw)
+	case app.StatusOffline:
+		raw = " (offline)"
+		return raw, statusOfflineStyle.Render(raw)
+	default:
+		return "", ""
+	}
 }
 
 // viewChatBody returns exactly chatBodyHeight lines for the message area.
