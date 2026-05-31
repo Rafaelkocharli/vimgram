@@ -653,7 +653,7 @@ func (m Model) onIncomingMessage(peerKey string, msg app.Message) Model {
 		wasAtBottom := isActiveChat && m.activeWindow().lineOffset == 0
 		addedLines := 0
 		if isActiveChat && !wasAtBottom {
-			addedLines = m.renderedLineCount(msg)
+			addedLines = m.appendedLineCount(buf, msg)
 		}
 		buf.messages = append(buf.messages, msg)
 		buf.msgVersion++
@@ -677,11 +677,16 @@ func (m Model) onIncomingMessage(peerKey string, msg app.Message) Model {
 	return m
 }
 
-// renderedLineCount returns how many visual lines a message occupies in the
-// active window.
-func (m Model) renderedLineCount(msg app.Message) int {
-	chatName, selfName := m.chatNames(m.activeBuffer())
-	return strings.Count(renderMessage(msg, chatName, selfName, m.activeWindow().width), "\n") + 1
+// appendedLineCount returns how many visual lines msg will add to buf when
+// appended, accounting for whether it starts a new "[HH-MM] Name" group.
+func (m Model) appendedLineCount(buf *buffer, msg app.Message) int {
+	chatName, selfName := m.chatNames(buf)
+	var prev *app.Message
+	if n := len(buf.messages); n > 0 {
+		prev = &buf.messages[n-1]
+	}
+	header := startsNewGroup(prev, msg)
+	return len(renderMessageBlock(msg, chatName, selfName, m.activeWindow().width, header))
 }
 
 func indexOfDialog(dialogs []app.Dialog, key string) int {

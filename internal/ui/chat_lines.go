@@ -1,6 +1,6 @@
 package ui
 
-import "strings"
+import "vimgram/internal/app"
 
 // chatCacheKey identifies a rendered history snapshot. If it is unchanged
 // between frames, the flattened lines can be reused verbatim.
@@ -45,9 +45,12 @@ func (m Model) computeChatLines(b *buffer, width int) []string {
 
 	lines := make([]string, 0, len(b.messages)+1)
 	lines = append(lines, m.historyTopLine(b))
-	for _, msg := range b.messages {
-		rendered := renderMessage(msg, chatName, selfName, width)
-		lines = append(lines, strings.Split(rendered, "\n")...)
+	var prev *app.Message
+	for i := range b.messages {
+		msg := b.messages[i]
+		header := startsNewGroup(prev, msg)
+		lines = append(lines, renderMessageBlock(msg, chatName, selfName, width, header)...)
+		prev = &b.messages[i]
 	}
 	return lines
 }

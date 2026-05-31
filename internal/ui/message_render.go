@@ -2,43 +2,44 @@ package ui
 
 import (
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
+	"time"
 
 	"vimgram/internal/app"
 )
 
-const minBodyWidth = 10
+const (
+	minBodyWidth = 10
+	// groupGap is the silence after which a message from the same sender gets
+	// a fresh "[HH-MM] Name" header instead of being grouped with the previous.
+	groupGap = 15 * time.Minute
+)
 
-// renderMessage produces a single (possibly multi-line) string for a message
-// with the inline format "[HH:MM] Sender: text" and a hanging indent for
-// any wrapped tail lines.
-func renderMessage(msg app.Message, chatName, selfName string, width int) string {
-	sender := pickSender(msg, chatName, selfName)
-	body := bodyOrPlaceholder(msg.Text)
-
-	prefix := buildPrefix(msg.Date.Local().Format("15:04"), sender, msg.Out)
-	prefixWidth := lipgloss.Width(prefix)
-	avail := clampMin(width-prefixWidth-1, minBodyWidth)
-
-	chunks := wrapText(body, avail)
-	if len(chunks) == 0 {
-		return prefix
+// startsNewGroup reports whether cur should begin a new header block: when it
+// is the first message, the sender changed, or more than groupGap elapsed
+// since the previous message.
+func startsNewGroup(prev *app.Message, cur app.Message) bool {
+	if prev == nil {
+		return true
 	}
-
-	var out strings.Builder
-	indent := strings.Repeat(" ", prefixWidth)
-	for i, c := range chunks {
-		if i == 0 {
-			out.WriteString(prefix + c)
-		} else {
-			out.WriteString("\n" + indent + c)
-		}
+	if senderKey(*prev) != senderKey(cur) {
+		return true
 	}
-	return out.String()
+	return cur.Date.Sub(prev.Date) > groupGap
 }
 
-func pickSender(msg app.Message, chatName, selfName string) string {
+// senderKey identifies who sent a message for grouping purposes.
+func senderKey(msg app.Message) string {
+	if msg.Out {
+		return "\x00out"
+	}
+	if msg.From != "" {
+		return "in:" + msg.From
+	}
+	return "in:" // a 1:1 chat has a single incoming sender
+}
+
+// senderName is the display name shown in a group header.
+func senderName(msg app.Message, chatName, selfName string) string {
 	if msg.From != "" {
 		return msg.From
 	}
@@ -51,23 +52,35 @@ func pickSender(msg app.Message, chatName, selfName string) string {
 	return chatName
 }
 
+// renderMessageBlock renders one message as visual lines. When withHeader is
+// true it is preceded by a "[HH-MM] Name" line; consecutive messages from the
+// same sender omit the header and just show their (wrapped) text.
+func renderMessageBlock(cur app.Message, chatName, selfName string, width int, withHeader bool) []string {
+	bodyStyle := inMsgStyle
+	if cur.Out {
+		bodyStyle = outMsgStyle
+	}
+
+	var lines []string
+	if withHeader {
+		ts := cur.Date.Local().Format("15-04")
+		name := senderName(cur, chatName, selfName)
+		lines = append(lines, dimStyle.Render("["+ts+"] ")+bodyStyle.Bold(true).Render(name))
+	}
+
+	avail := clampMin(width, minBodyWidth)
+	for _, chunk := range wrapText(bodyOrPlaceholder(cur.Text), avail) {
+		lines = append(lines, bodyStyle.Render(chunk))
+	}
+	return lines
+}
+
 func bodyOrPlaceholder(text string) string {
 	t := singleLine(text)
 	if t == "" {
 		return "(empty)"
 	}
 	return t
-}
-
-func buildPrefix(timestamp, sender string, outgoing bool) string {
-	timeS := dimStyle.Render("[" + timestamp + "]")
-	var nameS string
-	if outgoing {
-		nameS = outMsgStyle.Bold(true).Render(sender)
-	} else {
-		nameS = inMsgStyle.Bold(true).Render(sender)
-	}
-	return timeS + " " + nameS + ": "
 }
 
 // wrapText performs a simple word-wrap to the given visual width.

@@ -116,16 +116,35 @@ func TestUnreadBadge(t *testing.T) {
 	}
 }
 
-func TestRenderMessageWraps(t *testing.T) {
+func TestRenderMessageBlockWraps(t *testing.T) {
 	long := strings.Repeat("word ", 40)
 	msg := app.Message{Text: long, Date: time.Unix(0, 0)}
-	out := renderMessage(msg, "Alice", "Me", 40)
-	if !strings.Contains(out, "\n") {
-		t.Fatal("a long message should wrap onto multiple lines")
+	lines := renderMessageBlock(msg, "Alice", "Me", 40, true)
+	if len(lines) < 3 {
+		t.Fatalf("a long message with a header should produce several lines, got %d", len(lines))
 	}
-	for _, line := range strings.Split(out, "\n") {
+	for _, line := range lines {
 		if lipgloss.Width(line) > 40 {
 			t.Errorf("rendered line exceeds width: %q (w=%d)", line, lipgloss.Width(line))
 		}
+	}
+}
+
+func TestStartsNewGroup(t *testing.T) {
+	base := app.Message{From: "Alice", Date: time.Unix(1000, 0)}
+	if !startsNewGroup(nil, base) {
+		t.Error("first message should start a group")
+	}
+	same := app.Message{From: "Alice", Date: base.Date.Add(5 * time.Minute)}
+	if startsNewGroup(&base, same) {
+		t.Error("same sender within 15m should not start a new group")
+	}
+	gap := app.Message{From: "Alice", Date: base.Date.Add(20 * time.Minute)}
+	if !startsNewGroup(&base, gap) {
+		t.Error("same sender after >15m should start a new group")
+	}
+	other := app.Message{From: "Bob", Date: base.Date.Add(time.Minute)}
+	if !startsNewGroup(&base, other) {
+		t.Error("a different sender should start a new group")
 	}
 }
