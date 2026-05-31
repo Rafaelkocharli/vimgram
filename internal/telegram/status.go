@@ -22,6 +22,23 @@ func mapStatus(s tg.UserStatusClass) app.UserStatus {
 	}
 }
 
+// peerColorIndex returns the Telegram peer-color palette index for a user, or
+// -1 when the user has no explicit color set.
+func peerColorIndex(u *tg.User) int {
+	c, ok := u.GetColor()
+	if !ok {
+		return -1
+	}
+	pc, ok := c.(*tg.PeerColor)
+	if !ok {
+		return -1
+	}
+	if idx, ok := pc.GetColor(); ok {
+		return idx
+	}
+	return -1
+}
+
 // isTypingAction reports whether a send-message action represents the user
 // actively composing something (typing, recording, uploading…), as opposed
 // to cancelling.

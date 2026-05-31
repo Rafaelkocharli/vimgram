@@ -130,6 +130,23 @@ func TestRenderMessageBlockWraps(t *testing.T) {
 	}
 }
 
+func TestHashNameStable(t *testing.T) {
+	if hashName("Alice") != hashName("Alice") {
+		t.Error("hashName must be deterministic")
+	}
+	if hashName("") < 0 {
+		t.Error("hashName must be non-negative")
+	}
+}
+
+func TestNameStyleUsesPaletteIndex(t *testing.T) {
+	// A known index and a name-derived index should both produce a valid style
+	// (no panic, index wrapped into the palette).
+	_ = nameStyle(5, "Bob")
+	_ = nameStyle(-1, "Bob")
+	_ = nameStyle(999, "Bob") // out-of-range index must wrap, not panic
+}
+
 func TestStartsNewGroup(t *testing.T) {
 	base := app.Message{From: "Alice", Date: time.Unix(1000, 0)}
 	if !startsNewGroup(nil, base) {

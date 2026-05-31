@@ -78,10 +78,11 @@ func extractHistoryPage(raw tg.MessagesMessagesClass) ([]tg.MessageClass, []tg.U
 // buildMessage converts a gotd Message into the domain Message.
 func buildMessage(mm *tg.Message, users map[int64]*tg.User) app.Message {
 	m := app.Message{
-		ID:   mm.ID,
-		Out:  mm.Out,
-		Text: mm.Message,
-		Date: time.Unix(int64(mm.Date), 0),
+		ID:        mm.ID,
+		Out:       mm.Out,
+		Text:      mm.Message,
+		Date:      time.Unix(int64(mm.Date), 0),
+		NameColor: -1,
 	}
 	if m.Text == "" {
 		m.Text = "[media]"
@@ -90,6 +91,7 @@ func buildMessage(mm *tg.Message, users map[int64]*tg.User) app.Message {
 		if pu, ok := from.(*tg.PeerUser); ok {
 			if u, ok := users[pu.UserID]; ok {
 				m.From = strings.TrimSpace(u.FirstName + " " + u.LastName)
+				m.NameColor = peerColorIndex(u)
 			}
 		}
 	}

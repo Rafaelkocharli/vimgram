@@ -245,9 +245,10 @@ func sendMessage(
 		return app.Message{}, fmt.Errorf("send: %w", err)
 	}
 	return app.Message{
-		Out:  true,
-		Text: text,
-		Date: time.Now(),
-		From: strings.TrimSpace(self.FirstName + " " + self.LastName),
+		Out:       true,
+		Text:      text,
+		Date:      time.Now(),
+		From:      strings.TrimSpace(self.FirstName + " " + self.LastName),
+		NameColor: -1,
 	}, nil
 }

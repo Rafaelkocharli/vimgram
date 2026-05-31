@@ -4,6 +4,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"vimgram/internal/app"
 )
 
@@ -56,23 +58,41 @@ func senderName(msg app.Message, chatName, selfName string) string {
 // true it is preceded by a "[HH-MM] Name" line; consecutive messages from the
 // same sender omit the header and just show their (wrapped) text.
 func renderMessageBlock(cur app.Message, chatName, selfName string, width int, withHeader bool) []string {
-	bodyStyle := inMsgStyle
-	if cur.Out {
-		bodyStyle = outMsgStyle
-	}
-
 	var lines []string
 	if withHeader {
-		ts := cur.Date.Local().Format("15-04")
+		ts := cur.Date.Local().Format("15:04")
 		name := senderName(cur, chatName, selfName)
-		lines = append(lines, dimStyle.Render("["+ts+"] ")+bodyStyle.Bold(true).Render(name))
+		nameStyled := nameStyle(cur.NameColor, name).Render(name)
+		lines = append(lines, dimStyle.Render("["+ts+"] ")+nameStyled)
 	}
 
 	avail := clampMin(width, minBodyWidth)
 	for _, chunk := range wrapText(bodyOrPlaceholder(cur.Text), avail) {
-		lines = append(lines, bodyStyle.Render(chunk))
+		lines = append(lines, msgTextStyle.Render(chunk))
 	}
 	return lines
+}
+
+// nameStyle returns the bold colored style for a sender name. It uses the
+// Telegram palette index when known (idx >= 0); otherwise it derives a stable
+// index from the name so different users still get different colors.
+func nameStyle(idx int, name string) lipgloss.Style {
+	if idx < 0 {
+		idx = hashName(name)
+	}
+	c := namePalette[((idx%len(namePalette))+len(namePalette))%len(namePalette)]
+	return lipgloss.NewStyle().Bold(true).Foreground(c)
+}
+
+func hashName(s string) int {
+	h := 0
+	for _, r := range s {
+		h = h*31 + int(r)
+	}
+	if h < 0 {
+		h = -h
+	}
+	return h
 }
 
 func bodyOrPlaceholder(text string) string {

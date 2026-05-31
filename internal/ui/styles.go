@@ -24,8 +24,22 @@ var (
 	// the per-row hot path to avoid allocating a style on every frame.
 	dialogTitleStyle = lipgloss.NewStyle().Width(30)
 
-	outMsgStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#5fafff"))
-	inMsgStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#dddddd"))
+	// All message bodies are white; the sender's name carries the color.
+	msgTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
+
+	// namePalette approximates Telegram's peer-color palette (indices 0..6:
+	// red, orange, purple, green, cyan, blue, pink). Names are colored by their
+	// Telegram color index when known, otherwise by a stable hash of the name —
+	// either way different users get different colors.
+	namePalette = []lipgloss.Color{
+		"#e0524b", // 0 red
+		"#df9a3a", // 1 orange
+		"#9c6ce0", // 2 purple
+		"#4ab74e", // 3 green
+		"#3fb8c0", // 4 cyan
+		"#508cf0", // 5 blue
+		"#e36fae", // 6 pink
+	}
 	// unreadStyle paints the exactly-3-char unread badge (see unreadBadge).
 	// No padding here — width is controlled by the rendered string itself.
 	unreadStyle = lipgloss.NewStyle().Bold(true).
