@@ -83,9 +83,12 @@ type Message struct {
 	Text string
 	Date time.Time
 	// NameColor is the Telegram peer-color palette index for the sender's
-	// name, or -1 when unknown (the UI then derives a stable color from the
-	// name itself).
+	// name, or -1 when unknown.
 	NameColor int
+	// ReplyToID is the id of the message this one replies to (0 if not a reply).
+	ReplyToID int
+	// ReplyPreview is a short snippet of the replied-to message, when known.
+	ReplyPreview string
 }
 
 // Self is the authenticated user's profile snapshot.

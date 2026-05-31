@@ -164,4 +164,24 @@ func TestStartsNewGroup(t *testing.T) {
 	if !startsNewGroup(&base, other) {
 		t.Error("a different sender should start a new group")
 	}
+	reply := app.Message{From: "Alice", Date: base.Date.Add(time.Minute), ReplyToID: 7}
+	if !startsNewGroup(&base, reply) {
+		t.Error("a reply must always start a new group, even within 15m")
+	}
+}
+
+func TestReplyHint(t *testing.T) {
+	got := replyHint("hello there", 80)
+	if !strings.Contains(got, `replies to "hello there"`) {
+		t.Errorf("replyHint did not include preview verbatim: %q", got)
+	}
+	// Long previews are truncated with an ellipsis.
+	long := strings.Repeat("x", 200)
+	if !strings.HasSuffix(replyHint(long, 40), `…"`) {
+		t.Errorf("long preview should be truncated with an ellipsis")
+	}
+	// Empty preview still yields a visible hint.
+	if !strings.Contains(replyHint("", 80), `replies to "…"`) {
+		t.Errorf("empty preview should still show 'replies to ...'")
+	}
 }

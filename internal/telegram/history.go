@@ -47,13 +47,14 @@ func fetchHistory(ctx context.Context, client *telegram.Client, peer tg.InputPee
 	}
 
 	byUser := indexUsers(users)
+	byID := indexMessageTexts(rawMsgs)
 	messages := make([]app.Message, 0, len(rawMsgs))
 	for _, m := range rawMsgs {
 		mm, ok := m.(*tg.Message)
 		if !ok {
 			continue
 		}
-		messages = append(messages, buildMessage(mm, byUser))
+		messages = append(messages, buildMessage(mm, byUser, byID))
 	}
 
 	// API returns newest-first; flip to chronological.
@@ -76,7 +77,8 @@ func extractHistoryPage(raw tg.MessagesMessagesClass) ([]tg.MessageClass, []tg.U
 }
 
 // buildMessage converts a gotd Message into the domain Message.
-func buildMessage(mm *tg.Message, users map[int64]*tg.User) app.Message {
+// repliesByID maps message id -> short text; nil is fine (no preview enrichment).
+func buildMessage(mm *tg.Message, users map[int64]*tg.User, repliesByID map[int]string) app.Message {
 	m := app.Message{
 		ID:        mm.ID,
 		Out:       mm.Out,
@@ -95,7 +97,49 @@ func buildMessage(mm *tg.Message, users map[int64]*tg.User) app.Message {
 			}
 		}
 	}
+	if rh, ok := mm.GetReplyTo(); ok {
+		if mrh, ok := rh.(*tg.MessageReplyHeader); ok {
+			if id, ok := mrh.GetReplyToMsgID(); ok && id > 0 {
+				m.ReplyToID = id
+				if repliesByID != nil {
+					if t, ok := repliesByID[id]; ok {
+						m.ReplyPreview = t
+					}
+				}
+			}
+		}
+	}
 	return m
+}
+
+// indexMessageTexts maps message id -> a short single-line snippet, used to
+// fill the reply-to preview when both messages came in the same response.
+func indexMessageTexts(raw []tg.MessageClass) map[int]string {
+	out := make(map[int]string, len(raw))
+	for _, m := range raw {
+		mm, ok := m.(*tg.Message)
+		if !ok {
+			continue
+		}
+		out[mm.ID] = snippet(mm.Message)
+	}
+	return out
+}
+
+// snippet condenses text to a single line and caps it for inline display.
+func snippet(s string) string {
+	t := strings.ReplaceAll(s, "\n", " ")
+	t = strings.ReplaceAll(t, "\r", " ")
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return "[media]"
+	}
+	const max = 80
+	r := []rune(t)
+	if len(r) > max {
+		return string(r[:max])
+	}
+	return t
 }
 
 func reverse(m []app.Message) {

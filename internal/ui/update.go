@@ -650,6 +650,13 @@ func (m Model) onIncomingMessage(peerKey string, msg app.Message) Model {
 
 	// 1) append to the chat buffer (loaded but maybe not visible)
 	if buf != nil {
+		// If this is a reply and we don't yet have a preview, try to find the
+		// replied-to message among the already-loaded buffer messages.
+		if msg.ReplyToID != 0 && msg.ReplyPreview == "" {
+			if prev := findMessageByID(buf.messages, msg.ReplyToID); prev != nil {
+				msg.ReplyPreview = previewSnippet(prev.Text)
+			}
+		}
 		wasAtBottom := isActiveChat && m.activeWindow().lineOffset == 0
 		addedLines := 0
 		if isActiveChat && !wasAtBottom {
@@ -687,6 +694,31 @@ func (m Model) appendedLineCount(buf *buffer, msg app.Message) int {
 	}
 	header := startsNewGroup(prev, msg)
 	return len(renderMessageBlock(msg, chatName, selfName, m.activeWindow().width, header))
+}
+
+// findMessageByID returns a pointer to the message with the given id, or nil.
+func findMessageByID(msgs []app.Message, id int) *app.Message {
+	for i := range msgs {
+		if msgs[i].ID == id {
+			return &msgs[i]
+		}
+	}
+	return nil
+}
+
+// previewSnippet shortens a message body for a single-line "replies to ..."
+// hint, matching what the telegram layer produces for messages loaded as a page.
+func previewSnippet(text string) string {
+	t := singleLine(text)
+	if t == "" {
+		return "[media]"
+	}
+	const max = 80
+	r := []rune(t)
+	if len(r) > max {
+		return string(r[:max])
+	}
+	return t
 }
 
 func indexOfDialog(dialogs []app.Dialog, key string) int {

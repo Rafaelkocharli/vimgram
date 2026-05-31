@@ -17,9 +17,13 @@ const (
 )
 
 // startsNewGroup reports whether cur should begin a new header block: when it
-// is the first message, the sender changed, or more than groupGap elapsed
-// since the previous message.
+// is the first message, the sender changed, more than groupGap elapsed since
+// the previous message, or cur is a reply (replies always carry a header so
+// the "replies to ..." line can be shown).
 func startsNewGroup(prev *app.Message, cur app.Message) bool {
+	if cur.ReplyToID != 0 {
+		return true
+	}
 	if prev == nil {
 		return true
 	}
@@ -63,7 +67,11 @@ func renderMessageBlock(cur app.Message, chatName, selfName string, width int, w
 		ts := cur.Date.Local().Format("15:04")
 		name := senderName(cur, chatName, selfName)
 		nameStyled := nameStyle(cur.NameColor, name).Render(name)
-		lines = append(lines, dimStyle.Render("["+ts+"] ")+nameStyled)
+		header := dimStyle.Render("["+ts+"] ") + nameStyled
+		if cur.ReplyToID != 0 {
+			header += "  " + dimStyle.Render(replyHint(cur.ReplyPreview, width-lipgloss.Width(header)-1))
+		}
+		lines = append(lines, header)
 	}
 
 	avail := clampMin(width, minBodyWidth)
@@ -82,6 +90,31 @@ func nameStyle(idx int, name string) lipgloss.Style {
 	}
 	c := namePalette[((idx%len(namePalette))+len(namePalette))%len(namePalette)]
 	return lipgloss.NewStyle().Bold(true).Foreground(c)
+}
+
+// replyHint renders the dim "replies to "snippet…"" suffix for a header,
+// fitting within the remaining width of the header line. Unknown previews
+// fall back to "…" so the hint is still visible.
+func replyHint(preview string, room int) string {
+	if room < 12 {
+		room = 12
+	}
+	body := preview
+	if body == "" {
+		body = "…"
+	}
+	const prefix = `replies to "`
+	const suffix = `"`
+	max := room - len(prefix) - len(suffix)
+	if max < 3 {
+		// Not enough room for content; degrade to a marker we can still show.
+		return "↩"
+	}
+	r := []rune(body)
+	if len(r) > max {
+		body = string(r[:max-1]) + "…"
+	}
+	return prefix + body + suffix
 }
 
 func hashName(s string) int {
