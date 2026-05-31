@@ -94,6 +94,28 @@ func TestPadTo(t *testing.T) {
 	}
 }
 
+func TestUnreadBadge(t *testing.T) {
+	tests := []struct {
+		count int
+		want  string // visible content (ignoring ANSI styling)
+	}{
+		{5, " 5 "},
+		{12, " 12"},
+		{345, "345"},
+		{1000, "999"},
+		{9999, "999"},
+	}
+	for _, tc := range tests {
+		got := unreadBadge(tc.count)
+		if lipgloss.Width(got) != 3 {
+			t.Errorf("unreadBadge(%d) width = %d, want 3", tc.count, lipgloss.Width(got))
+		}
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("unreadBadge(%d) = %q, want to contain %q", tc.count, got, tc.want)
+		}
+	}
+}
+
 func TestRenderMessageWraps(t *testing.T) {
 	long := strings.Repeat("word ", 40)
 	msg := app.Message{Text: long, Date: time.Unix(0, 0)}

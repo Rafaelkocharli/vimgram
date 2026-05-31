@@ -26,9 +26,11 @@ var (
 
 	outMsgStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#5fafff"))
 	inMsgStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#dddddd"))
+	// unreadStyle paints the exactly-3-char unread badge (see unreadBadge).
+	// No padding here — width is controlled by the rendered string itself.
 	unreadStyle = lipgloss.NewStyle().Bold(true).
 			Foreground(lipgloss.Color("#ffffff")).
-			Background(lipgloss.Color("#5fafd7")).Padding(0, 1)
+			Background(lipgloss.Color("#5fafd7"))
 
 	modeNormalStyle  = modeBadgeStyle("#5fafff")
 	modeVisualStyle  = modeBadgeStyle("#d75fd7")

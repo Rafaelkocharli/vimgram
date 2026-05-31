@@ -220,14 +220,39 @@ func (m Model) renderDialogRow(idx int, selected bool, width int) string {
 	if selected {
 		prefix = "▸ "
 	}
-	line := prefix + chip + "  " + titleCol + preview
+	left := prefix + chip + "  " + titleCol + preview
+
+	// Right-align the unread badge to the window's right edge so badges line
+	// up in a column regardless of how short the message preview is.
 	if d.Unread > 0 {
-		line += "  " + unreadStyle.Render(strconv.Itoa(d.Unread))
+		badge := unreadBadge(d.Unread)
+		pad := width - lipgloss.Width(left) - lipgloss.Width(badge)
+		if pad < 1 {
+			pad = 1
+		}
+		left += strings.Repeat(" ", pad) + badge
 	}
 	if selected {
-		return selBg.Render(line)
+		return selBg.Render(left)
 	}
-	return line
+	return left
+}
+
+// unreadBadge renders the unread counter as an exactly-3-character badge on a
+// turquoise background. The number is centred with any extra space biased to
+// the left (" 5 ", " 12", "345"); counts above 999 are capped at "999".
+func unreadBadge(count int) string {
+	if count > 999 {
+		count = 999
+	}
+	s := strconv.Itoa(count)
+	pad := 3 - len(s)
+	if pad < 0 {
+		pad = 0
+	}
+	leftPad := pad - pad/2
+	rightPad := pad / 2
+	return unreadStyle.Render(strings.Repeat(" ", leftPad) + s + strings.Repeat(" ", rightPad))
 }
 
 func dialogChip(kind app.DialogKind) string {
