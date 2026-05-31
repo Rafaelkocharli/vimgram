@@ -18,6 +18,7 @@ const (
 	CmdVSplit               // :vsplit, :vs [buffer]
 	CmdClose                // :close
 	CmdSet                  // :set <option>
+	CmdHelp                 // :help
 )
 
 // Command is a parsed ":" command line.
@@ -70,6 +71,8 @@ func ParseCommand(s string) Command {
 		return Command{Kind: CmdClose}
 	case "set":
 		return Command{Kind: CmdSet, Arg: arg, HasArg: arg != ""}
+	case "help", "h":
+		return Command{Kind: CmdHelp}
 	}
 	return Command{Kind: CmdUnknown}
 }

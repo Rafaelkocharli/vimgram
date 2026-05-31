@@ -93,10 +93,14 @@ func padTo(s string, w int) string {
 
 // renderWindowRows renders one window's content to exactly height-1 rows.
 func (m Model) renderWindowRows(w *window, width int, focused bool) []string {
-	if m.bufferOf(w).kind == bufChatList {
+	switch m.bufferOf(w).kind {
+	case bufChatList:
 		return m.renderListWindow(w, width, focused)
+	case bufHelp:
+		return m.renderHelpWindow(w, width, focused)
+	default:
+		return m.renderChatWindow(w, width, focused)
 	}
-	return m.renderChatWindow(w, width, focused)
 }
 
 // ----- Auth ---------------------------------------------------------------
@@ -296,6 +300,14 @@ func titleOrFallback(t string) string {
 
 // ----- Chat window --------------------------------------------------------
 
+func (m Model) renderHelpWindow(w *window, width int, focused bool) []string {
+	b := m.bufferOf(w)
+	rows := make([]string, 0, m.heightOrDefault()-1)
+	rows = append(rows, titleStyleFor(focused).Render(truncRunes("help", width)))
+	rows = append(rows, m.chatBody(b, w, width)...)
+	return rows
+}
+
 func (m Model) renderChatWindow(w *window, width int, focused bool) []string {
 	b := m.bufferOf(w)
 	rows := make([]string, 0, m.heightOrDefault()-1)
@@ -365,7 +377,7 @@ func (m Model) chatBody(b *buffer, w *window, width int) []string {
 	if b.loadingMsg {
 		return m.padBody([]string{m.spin.View() + " Loading messages..."})
 	}
-	if len(b.messages) == 0 {
+	if len(m.chatLines(b, width)) == 0 {
 		return m.padBody([]string{dimStyle.Render("(empty)")})
 	}
 	return m.chatViewport(b, w, width)

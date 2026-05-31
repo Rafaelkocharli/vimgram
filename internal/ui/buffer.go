@@ -8,6 +8,7 @@ type bufferKind int
 const (
 	bufChatList bufferKind = iota
 	bufChat
+	bufHelp // read-only, scrollable, static content
 )
 
 // chatListBufferID is the fixed id of the always-present "Chats" buffer.
@@ -39,6 +40,9 @@ type buffer struct {
 
 	msgVersion int
 	cache      *chatCache
+
+	// bufHelp only: static lines to display.
+	helpLines []string
 }
 
 // bufferStore is the ordered registry of buffers. Order drives :ls and
@@ -90,6 +94,24 @@ func (s *bufferStore) addChat(d app.Dialog) *buffer {
 	s.nextID++
 	s.list = append(s.list, b)
 	s.byPeer[d.Key] = b.id
+	return b
+}
+
+// addHelp creates (or returns existing) help buffer.
+func (s *bufferStore) addHelp(lines []string) *buffer {
+	for _, b := range s.list {
+		if b.kind == bufHelp {
+			return b
+		}
+	}
+	b := &buffer{
+		id:        s.nextID,
+		kind:      bufHelp,
+		name:      "help",
+		helpLines: lines,
+	}
+	s.nextID++
+	s.list = append(s.list, b)
 	return b
 }
 

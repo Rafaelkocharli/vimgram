@@ -4,6 +4,7 @@ const (
 	// Layout constants used by the fixed-height, bottom-pinned layouts.
 	chatListChrome = 2 // header(1) + status(1)
 	chatViewChrome = 3 // header(1) + input(1) + status(1)
+	helpViewChrome = 2 // header(1) + status(1); no input line
 )
 
 // visibleRows returns the number of dialog rows that fit in the chat list
@@ -22,14 +23,29 @@ func (m *Model) visibleRows() int {
 // (when a reply is pending) the reply banner each take one line.
 func (m *Model) chatBodyHeight() int {
 	h := m.heightOrDefault()
-	extra := 0
 	if m.authed {
-		if b := m.activeBuffer(); b != nil && b.kind == bufChat &&
-			(b.replyToID != 0 || b.editMsgID != 0) {
-			extra = 1
+		if b := m.activeBuffer(); b != nil {
+			switch b.kind {
+			case bufHelp:
+				lines := h - helpViewChrome
+				if lines < 1 {
+					return 1
+				}
+				return lines
+			case bufChat:
+				extra := 0
+				if b.replyToID != 0 || b.editMsgID != 0 {
+					extra = 1
+				}
+				lines := h - chatViewChrome - extra
+				if lines < 1 {
+					return 1
+				}
+				return lines
+			}
 		}
 	}
-	lines := h - chatViewChrome - extra
+	lines := h - chatViewChrome
 	if lines < 1 {
 		return 1
 	}

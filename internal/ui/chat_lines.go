@@ -20,10 +20,14 @@ type chatCache struct {
 	lines []string
 }
 
-// chatLines returns the flattened history of a chat buffer at the given width,
-// memoized. Rendering every message through lipgloss on each frame was the
+// chatLines returns the displayable lines for a buffer at the given width.
+// For help buffers the static helpLines are returned directly. For chat
+// buffers the history is flattened and memoized. Rendering every message through lipgloss on each frame was the
 // dominant allocation source; the cache makes repeated frames essentially free.
 func (m Model) chatLines(b *buffer, width int) []string {
+	if b.kind == bufHelp {
+		return b.helpLines
+	}
 	// While loading older messages the top line animates a spinner, so the
 	// output changes every frame — skip the cache to keep it live.
 	if b.loadingMore {

@@ -274,6 +274,7 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	height := m.chatBodyHeight()
 	w := m.activeWindow()
 	b := m.activeBuffer()
+	readOnly := b.kind == bufHelp
 
 	// Handle second key of "y" chord.
 	if m.pendingYank {
@@ -315,11 +316,14 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		b.replyToPreview = ""
 		return m, nil
 	case "y":
-		if m.cursorMessage(b, w) != nil {
+		if !readOnly && m.cursorMessage(b, w) != nil {
 			m.pendingYank = true
 		}
 		return m, nil
 	case "p":
+		if readOnly {
+			return m, nil
+		}
 		if m.yankReg != "" {
 			m.msgInput.SetValue(m.yankReg)
 			m.vimMode = app.ModeEdit
@@ -328,17 +332,22 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "d":
-		if m.cursorMessage(b, w) != nil {
+		if !readOnly && m.cursorMessage(b, w) != nil {
 			m.pendingDelete = true
 		}
 		return m, nil
 	case "r":
-		if msg := m.cursorMessage(b, w); msg != nil {
-			b.replyToID = msg.ID
-			b.replyToPreview = previewSnippet(msg.Text)
+		if !readOnly {
+			if msg := m.cursorMessage(b, w); msg != nil {
+				b.replyToID = msg.ID
+				b.replyToPreview = previewSnippet(msg.Text)
+			}
 		}
 		return m, nil
 	case "e":
+		if readOnly {
+			return m, nil
+		}
 		if msg := m.cursorMessage(b, w); msg != nil {
 			b.editMsgID = msg.ID
 			b.editOrigText = previewSnippet(msg.Text)
@@ -357,6 +366,9 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.vimMode = app.ModeVisual
 		return m, nil
 	case "a", "i":
+		if readOnly {
+			return m, nil
+		}
 		m.vimMode = app.ModeEdit
 		m.msgInput.Focus()
 		return m, textinput.Blink
@@ -677,6 +689,11 @@ func (m Model) executeCommand(raw string) (tea.Model, tea.Cmd) {
 			id = parseID(cmd.Arg)
 		}
 		return m.deleteBuffer(id), nil
+	case app.CmdHelp:
+		b := m.buffers.addHelp(helpContent)
+		m.switchBuffer(b.id)
+		m.chatCursorToBottom(b, m.activeWindow())
+		return m, nil
 	case app.CmdSet:
 		switch cmd.Arg {
 		case "showarchive":
