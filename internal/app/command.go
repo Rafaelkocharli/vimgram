@@ -54,6 +54,9 @@ func ParseCommand(s string) Command {
 		return Command{Kind: CmdQuitForce}
 	case "ls", "buffers":
 		return Command{Kind: CmdBuffers}
+	case "chats":
+		// Alias for :b1 — the chat-list buffer always has id 1.
+		return Command{Kind: CmdBufferSwitch, Arg: "1", HasArg: true}
 	case "bn", "bnext":
 		return Command{Kind: CmdBufferNext}
 	case "bp", "bprev", "bprevious":

@@ -35,6 +35,8 @@ func TestParseCommand(t *testing.T) {
 		{"vs Chats", CmdVSplit, "Chats", true},
 		{"close", CmdClose, "", false},
 		{"clo", CmdClose, "", false},
+		{"chats", CmdBufferSwitch, "1", true}, // alias for :b1
+
 		{"b", CmdUnknown, "", false},     // bare :b without arg
 		{"bogus", CmdUnknown, "", false}, // unknown verb
 	}
