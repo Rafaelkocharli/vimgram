@@ -201,7 +201,7 @@ func (m Model) updateChatList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		w.cursor = 0
 		w.listOffset = 0
 	case "G", "end":
-		w.cursor = len(m.dialogs) - 1
+		w.cursor = len(m.visibleDialogs()) - 1
 		m.adjustListOffset()
 	case "enter":
 		return m.openSelectedChat()
@@ -212,7 +212,7 @@ func (m Model) updateChatList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) moveCursor(delta int) {
 	w := m.activeWindow()
 	next := w.cursor + delta
-	if next < 0 || next >= len(m.dialogs) {
+	if next < 0 || next >= len(m.visibleDialogs()) {
 		return
 	}
 	w.cursor = next
@@ -220,10 +220,11 @@ func (m *Model) moveCursor(delta int) {
 }
 
 func (m Model) openSelectedChat() (tea.Model, tea.Cmd) {
-	if len(m.dialogs) == 0 {
+	visible := m.visibleDialogs()
+	if len(visible) == 0 {
 		return m, nil
 	}
-	d := m.dialogs[m.activeWindow().cursor]
+	d := visible[m.activeWindow().cursor]
 
 	// Reuse the buffer if this chat is already loaded — switch instantly.
 	if existing := m.buffers.findByPeer(d.Key); existing != nil {
@@ -676,6 +677,18 @@ func (m Model) executeCommand(raw string) (tea.Model, tea.Cmd) {
 			id = parseID(cmd.Arg)
 		}
 		return m.deleteBuffer(id), nil
+	case app.CmdSet:
+		switch cmd.Arg {
+		case "showarchive":
+			m.showArchive = true
+		case "noshowarchive":
+			m.showArchive = false
+		default:
+			if raw != "" {
+				m.err = &unknownCmdError{cmd: raw}
+			}
+		}
+		return m, nil
 	}
 	if raw != "" {
 		m.err = &unknownCmdError{cmd: raw}
@@ -1061,15 +1074,17 @@ func indexOfDialog(dialogs []app.Dialog, key string) int {
 func resortDialogsKeepingCursor(m Model) Model {
 	w := m.activeWindow()
 	var cursorKey string
-	if w.cursor < len(m.dialogs) {
-		cursorKey = m.dialogs[w.cursor].Key
+	visible := m.visibleDialogs()
+	if w.cursor < len(visible) {
+		cursorKey = visible[w.cursor].Key
 	}
 	sort.SliceStable(m.dialogs, func(i, j int) bool {
 		return m.dialogs[i].LastDate > m.dialogs[j].LastDate
 	})
 	if cursorKey != "" {
-		for i := range m.dialogs {
-			if m.dialogs[i].Key == cursorKey {
+		newVisible := m.visibleDialogs()
+		for i := range newVisible {
+			if newVisible[i].Key == cursorKey {
 				w.cursor = i
 				m.adjustListOffset()
 				break

@@ -73,6 +73,7 @@ type Dialog struct {
 	LastMsg  string
 	LastDate int // unix seconds
 	Unread   int
+	Archived bool // true when the dialog is in the Telegram archive folder
 }
 
 // Message is one entry in a chat history.

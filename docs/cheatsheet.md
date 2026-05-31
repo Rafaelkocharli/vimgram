@@ -45,11 +45,13 @@ ctrl+w w    cycle focus
 
 # Commands
 
-:q          close window (quit if last window)
-:q!         force quit
-:wq / :qa   force quit
-:vs [arg]   vertical split (arg: buffer id or "chats")
-:close      close focused window
+:q                  close window (quit if last window)
+:q!                 force quit
+:wq / :qa           force quit
+:vs [arg]           vertical split (arg: buffer id or "chats")
+:close              close focused window
+:set showarchive    show archived chats in the list
+:set noshowarchive  hide archived chats (default)
 
 # Buffers
 

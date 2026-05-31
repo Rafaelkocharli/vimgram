@@ -171,7 +171,7 @@ func buildDialogEntry(
 	chats map[int64]*tg.Chat,
 	channels map[int64]*tg.Channel,
 ) (app.Dialog, bool) {
-	entry := app.Dialog{Unread: d.UnreadCount, Key: PeerKey(d.Peer)}
+	entry := app.Dialog{Unread: d.UnreadCount, Key: PeerKey(d.Peer), Archived: d.FolderID == 1}
 	switch p := d.Peer.(type) {
 	case *tg.PeerUser:
 		u, ok := users[p.UserID]

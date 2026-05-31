@@ -180,10 +180,29 @@ func (m Model) renderListWindow(w *window, width int, focused bool) []string {
 	return rows
 }
 
+// visibleDialogs returns the subset of dialogs that should be shown given the
+// current showArchive setting.
+func (m Model) visibleDialogs() []app.Dialog {
+	if m.showArchive {
+		return m.dialogs
+	}
+	out := make([]app.Dialog, 0, len(m.dialogs))
+	for _, d := range m.dialogs {
+		if !d.Archived {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 func (m Model) listHeader(w *window, width int, focused bool) string {
+	visible := m.visibleDialogs()
 	header := fmt.Sprintf("Chats · %s", m.self.DisplayName())
-	if len(m.dialogs) > 0 {
-		header += fmt.Sprintf("  (%d/%d)", w.cursor+1, len(m.dialogs))
+	if len(visible) > 0 {
+		header += fmt.Sprintf("  (%d/%d)", w.cursor+1, len(visible))
+	}
+	if m.showArchive {
+		header += dimStyle.Render(" [+archive]")
 	}
 	return titleStyleFor(focused).Render(truncRunes(header, width))
 }
@@ -191,16 +210,17 @@ func (m Model) listHeader(w *window, width int, focused bool) string {
 func (m Model) listBody(w *window, width int) []string {
 	rows := m.visibleRows()
 	out := make([]string, 0, rows)
+	visible := m.visibleDialogs()
 
-	if len(m.dialogs) == 0 {
+	if len(visible) == 0 {
 		out = append(out, dimStyle.Render("No chats"))
 	} else {
 		end := w.listOffset + rows
-		if end > len(m.dialogs) {
-			end = len(m.dialogs)
+		if end > len(visible) {
+			end = len(visible)
 		}
 		for i := w.listOffset; i < end; i++ {
-			out = append(out, m.renderDialogRow(i, i == w.cursor, width))
+			out = append(out, m.renderDialogRow(visible, i, i == w.cursor, width))
 		}
 	}
 	for len(out) < rows {
@@ -209,8 +229,8 @@ func (m Model) listBody(w *window, width int) []string {
 	return out[:rows]
 }
 
-func (m Model) renderDialogRow(idx int, selected bool, width int) string {
-	d := m.dialogs[idx]
+func (m Model) renderDialogRow(dialogs []app.Dialog, idx int, selected bool, width int) string {
+	d := dialogs[idx]
 	chip := dialogChip(d.Kind)
 	titleCol := dialogTitleStyle.Render(truncRunes(titleOrFallback(d.Title), 28))
 

@@ -33,8 +33,9 @@ type Model struct {
 	overlay      []string // non-empty => :ls buffer-list overlay is shown
 
 	// Self + dialog list (global Telegram state, rendered by the Chats buffer).
-	self    app.Self
-	dialogs []app.Dialog
+	self        app.Self
+	dialogs     []app.Dialog
+	showArchive bool // whether to show archived chats (default: false)
 
 	// Presence: per-user online state and typing expiry timestamps.
 	statuses    map[int64]app.UserStatus
