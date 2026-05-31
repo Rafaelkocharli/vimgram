@@ -487,6 +487,8 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 		editID := b.editMsgID
 		b.editMsgID = 0
 		b.editOrigText = ""
+		m.vimMode = app.ModeNormal
+		m.msgInput.Blur()
 		peer := b.peer
 		client := m.client
 		return m, func() tea.Msg {
