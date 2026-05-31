@@ -114,9 +114,10 @@ func (c *Client) LoadMore(peer app.PeerRef, beforeID int) {
 	c.requests <- loadMoreReq{peer: peer.(tg.InputPeerClass), beforeID: beforeID}
 }
 
-// SendMessage queues an outgoing message to peer.
-func (c *Client) SendMessage(peer app.PeerRef, text string) {
-	c.requests <- sendMsgReq{peer: peer.(tg.InputPeerClass), text: text}
+// SendMessage queues an outgoing message to peer. Pass replyToMsgID > 0 to
+// send as a reply to an existing message.
+func (c *Client) SendMessage(peer app.PeerRef, text string, replyToMsgID int) {
+	c.requests <- sendMsgReq{peer: peer.(tg.InputPeerClass), text: text, replyToMsgID: replyToMsgID}
 }
 
 // Internal request types passed via c.requests.
@@ -130,8 +131,9 @@ type (
 		beforeID int
 	}
 	sendMsgReq struct {
-		peer tg.InputPeerClass
-		text string
+		peer         tg.InputPeerClass
+		text         string
+		replyToMsgID int
 	}
 )
 
@@ -222,7 +224,7 @@ func (c *Client) handleRequest(ctx context.Context, tgc *telegram.Client, req an
 		}
 		c.emit(EventMessagesPrepended{PeerKey: InputPeerKey(r.peer), Messages: msgs, HasMore: more})
 	case sendMsgReq:
-		msg, err := sendMessage(ctx, tgc, r.peer, r.text, c.self)
+		msg, err := sendMessage(ctx, tgc, r.peer, r.text, r.replyToMsgID, c.self)
 		c.emit(EventMessageSent{PeerKey: InputPeerKey(r.peer), Message: msg, Err: err})
 	}
 }
@@ -234,13 +236,18 @@ func sendMessage(
 	tgc *telegram.Client,
 	peer tg.InputPeerClass,
 	text string,
+	replyToMsgID int,
 	self app.Self,
 ) (app.Message, error) {
-	_, err := tgc.API().MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
+	req := &tg.MessagesSendMessageRequest{
 		Peer:     peer,
 		Message:  text,
 		RandomID: rand.Int63(),
-	})
+	}
+	if replyToMsgID > 0 {
+		req.ReplyTo = &tg.InputReplyToMessage{ReplyToMsgID: replyToMsgID}
+	}
+	_, err := tgc.API().MessagesSendMessage(ctx, req)
 	if err != nil {
 		return app.Message{}, fmt.Errorf("send: %w", err)
 	}

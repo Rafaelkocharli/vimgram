@@ -45,6 +45,10 @@ type Model struct {
 	msgInput  textinput.Model
 	spin      spinner.Model
 
+	// Discard-draft confirmation: true while waiting for the user to answer
+	// "No write since last change. Discard draft? [y/N]".
+	discardPrompt bool
+
 	// Channels and shared state
 	promptAnswers chan string
 	err           error

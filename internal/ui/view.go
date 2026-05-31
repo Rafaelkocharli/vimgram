@@ -281,8 +281,21 @@ func (m Model) renderChatWindow(w *window, width int, focused bool) []string {
 	rows := make([]string, 0, m.heightOrDefault()-1)
 	rows = append(rows, m.chatHeader(b, width, focused))
 	rows = append(rows, m.chatBody(b, w, width)...)
+	if b.replyToID != 0 {
+		rows = append(rows, m.chatReplyLine(b, width))
+	}
 	rows = append(rows, m.chatInputLine(b, focused))
 	return rows
+}
+
+// chatReplyLine renders the one-line reply banner shown above the compose input.
+func (m Model) chatReplyLine(b *buffer, width int) string {
+	preview := b.replyToPreview
+	if preview == "" {
+		preview = "…"
+	}
+	label := "↩ replying to “" + preview + "”"
+	return dimStyle.Render(truncRunes(label, width))
 }
 
 func (m Model) chatHeader(b *buffer, width int, focused bool) string {
@@ -340,6 +353,9 @@ func (m Model) chatNames(b *buffer) (string, string) {
 func (m Model) chatInputLine(b *buffer, focused bool) string {
 	if b.sending {
 		return m.spin.View() + " Sending..."
+	}
+	if focused && m.discardPrompt {
+		return errorStyle.Render("No write since last change. Discard draft? [y/N]")
 	}
 	if focused && m.vimMode == app.ModeEdit {
 		return m.msgInput.View()

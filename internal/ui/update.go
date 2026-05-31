@@ -84,6 +84,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !m.authed {
 		return m.updateAuth(msg)
 	}
+	// Discard-draft confirmation takes priority over everything else.
+	if m.discardPrompt {
+		return m.handleDiscardPrompt(msg)
+	}
 	// Any key dismisses the :ls overlay.
 	if len(m.overlay) > 0 {
 		m.overlay = nil
@@ -268,6 +272,21 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	b := m.activeBuffer()
 
 	switch msg.String() {
+	case "esc":
+		draft := strings.TrimSpace(m.msgInput.Value())
+		if draft != "" {
+			m.discardPrompt = true
+			return m, nil
+		}
+		b.replyToID = 0
+		b.replyToPreview = ""
+		return m, nil
+	case "r":
+		if msg := m.cursorMessage(b, w); msg != nil {
+			b.replyToID = msg.ID
+			b.replyToPreview = previewSnippet(msg.Text)
+		}
+		return m, nil
 	case ":":
 		m.enterCommandMode()
 		return m, nil
@@ -370,6 +389,29 @@ func (m *Model) chatCursorToBottom(b *buffer, w *window) {
 	w.lineOffset = 0
 }
 
+// cursorMessage returns the app.Message that the visual cursor sits on, or nil
+// if the cursor is on a non-message line (the history-top marker).
+func (m *Model) cursorMessage(b *buffer, w *window) *app.Message {
+	target := w.msgCursor
+	if target <= 0 || len(b.messages) == 0 {
+		return nil
+	}
+	chatName, selfName := m.chatNames(b)
+	lineIdx := 1 // line 0 is always historyTopLine
+	var prev *app.Message
+	for i := range b.messages {
+		msg := b.messages[i]
+		header := startsNewGroup(prev, msg)
+		count := len(renderMessageBlock(msg, chatName, selfName, w.width, header))
+		if target >= lineIdx && target < lineIdx+count {
+			return &b.messages[i]
+		}
+		lineIdx += count
+		prev = &b.messages[i]
+	}
+	return nil
+}
+
 // clampCol returns col clamped to the visible character count of the cursor line.
 func (m *Model) clampCol(b *buffer, w *window, col int) int {
 	lines := m.chatLines(b, w.width)
@@ -420,13 +462,34 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 	}
 	m.msgInput.SetValue("")
 	b.sending = true
+	b.draft = ""
 	m.activeWindow().lineOffset = 0
 	peer := b.peer
+	replyToMsgID := b.replyToID
+	b.replyToID = 0
+	b.replyToPreview = ""
 	client := m.client
 	return m, func() tea.Msg {
-		client.SendMessage(peer, text)
+		client.SendMessage(peer, text, replyToMsgID)
 		return nil
 	}
+}
+
+// ----- Discard-draft confirmation -----------------------------------------
+
+// handleDiscardPrompt handles the y/N answer to "Discard draft?".
+func (m Model) handleDiscardPrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.discardPrompt = false
+	switch msg.String() {
+	case "y", "Y":
+		b := m.activeBuffer()
+		m.msgInput.SetValue("")
+		b.draft = ""
+		b.replyToID = 0
+		b.replyToPreview = ""
+	}
+	// Any other key (including N, n, esc) keeps draft and reply intact.
+	return m, nil
 }
 
 // ----- Command mode (":") -------------------------------------------------

@@ -18,12 +18,17 @@ func (m *Model) visibleRows() int {
 }
 
 // chatBodyHeight returns the number of terminal lines reserved for the
-// message area in the chat view. The header, input, and status line take a
-// fixed line each, so the body fills everything in between. This is what lets
-// the status line stay pinned to the bottom regardless of content.
+// message area in the chat view. The header, input, status line, and
+// (when a reply is pending) the reply banner each take one line.
 func (m *Model) chatBodyHeight() int {
 	h := m.heightOrDefault()
-	lines := h - chatViewChrome
+	extra := 0
+	if m.authed {
+		if b := m.activeBuffer(); b != nil && b.kind == bufChat && b.replyToID != 0 {
+			extra = 1
+		}
+	}
+	lines := h - chatViewChrome - extra
 	if lines < 1 {
 		return 1
 	}
