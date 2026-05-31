@@ -1,6 +1,10 @@
 package ui
 
-import "vimgram/internal/app"
+import (
+	"vimgram/internal/app"
+
+	"github.com/charmbracelet/x/ansi"
+)
 
 // chatCacheKey identifies a rendered history snapshot. If it is unchanged
 // between frames, the flattened lines can be reused verbatim.
@@ -90,7 +94,13 @@ func (m Model) chatViewport(b *buffer, w *window, width int) []string {
 		}
 		top = 0
 	}
-	out = append(out, all[top:bottom]...)
+	for i, line := range all[top:bottom] {
+		if top+i == w.msgCursor {
+			out = append(out, renderCursorLine(line, w.colCursor, width))
+		} else {
+			out = append(out, line)
+		}
+	}
 
 	for len(out) < height {
 		out = append(out, "")
@@ -99,6 +109,30 @@ func (m Model) chatViewport(b *buffer, w *window, width int) []string {
 		out = out[len(out)-height:]
 	}
 	return out
+}
+
+// renderCursorLine strips ANSI from line, applies the cursor-line background
+// across the full width, and places a block cursor at column col.
+func renderCursorLine(line string, col int, width int) string {
+	plain := ansi.Strip(line)
+	runes := []rune(plain)
+
+	// Pad to full width so the background fills the entire row.
+	for len(runes) < width {
+		runes = append(runes, ' ')
+	}
+
+	if col < 0 {
+		col = 0
+	}
+	if col >= len(runes) {
+		col = len(runes) - 1
+	}
+
+	before := cursorLineStyle.Render(string(runes[:col]))
+	cur := cursorCharStyle.Render(string(runes[col : col+1]))
+	after := cursorLineStyle.Render(string(runes[col+1:]))
+	return before + cur + after
 }
 
 // maxLineOffset is the furthest a window can scroll up for a given buffer/width.

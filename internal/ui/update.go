@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"vimgram/internal/app"
 	"vimgram/internal/telegram"
@@ -264,7 +265,7 @@ func (m Model) updateVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	height := m.chatBodyHeight()
 	w := m.activeWindow()
-	maxOffset := m.maxLineOffset(m.activeBuffer(), w.width)
+	b := m.activeBuffer()
 
 	switch msg.String() {
 	case ":":
@@ -277,35 +278,109 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.vimMode = app.ModeEdit
 		m.msgInput.Focus()
 		return m, textinput.Blink
-	case "pgup", "ctrl+u":
-		w.lineOffset += height / 2
-		if w.lineOffset >= maxOffset {
-			w.lineOffset = maxOffset
-			if cmd := m.maybeLoadOlder(); cmd != nil {
-				return m, cmd
-			}
+	case "h":
+		if w.colCursor > 0 {
+			w.colCursor--
 		}
-	case "pgdown", "ctrl+d":
-		w.lineOffset = clampMin(w.lineOffset-height/2, 0)
+	case "l":
+		w.colCursor = m.clampCol(b, w, w.colCursor+1)
 	case "k", "up":
-		if w.lineOffset < maxOffset {
-			w.lineOffset++
-		} else if cmd := m.maybeLoadOlder(); cmd != nil {
+		if cmd := m.moveMsgCursor(-1); cmd != nil {
 			return m, cmd
 		}
 	case "j", "down":
-		if w.lineOffset > 0 {
-			w.lineOffset--
+		m.moveMsgCursor(1)
+	case "pgup", "ctrl+u":
+		if cmd := m.moveMsgCursor(-(height / 2)); cmd != nil {
+			return m, cmd
 		}
+	case "pgdown", "ctrl+d":
+		m.moveMsgCursor(height / 2)
 	case "g", "home":
-		w.lineOffset = maxOffset
+		total := len(m.chatLines(b, w.width))
+		w.msgCursor = 0
+		w.colCursor = 0
+		w.lineOffset = clampMin(total-height, 0)
 		if cmd := m.maybeLoadOlder(); cmd != nil {
 			return m, cmd
 		}
 	case "G", "end":
-		w.lineOffset = 0
+		m.chatCursorToBottom(b, w)
 	}
 	return m, nil
+}
+
+// moveMsgCursor moves the chat cursor by delta visual lines, scrolling the
+// viewport to keep it visible. Returns a load-older command when the cursor
+// reaches the very top of the loaded history.
+func (m *Model) moveMsgCursor(delta int) tea.Cmd {
+	w := m.activeWindow()
+	b := m.activeBuffer()
+	total := len(m.chatLines(b, w.width))
+	if total == 0 {
+		return nil
+	}
+	height := m.chatBodyHeight()
+
+	// Snap to bottom on first use (msgCursor==0, lineOffset==0 means the user
+	// hasn't moved yet and the natural position is the last line).
+	if w.msgCursor == 0 && w.lineOffset == 0 {
+		w.msgCursor = total - 1
+	}
+
+	w.msgCursor += delta
+	if w.msgCursor < 0 {
+		w.msgCursor = 0
+	}
+	if w.msgCursor >= total {
+		w.msgCursor = total - 1
+	}
+	w.colCursor = 0
+
+	// Keep cursor inside the visible band:
+	//   visible = [ total - lineOffset - height,  total - lineOffset )
+	visTop := total - w.lineOffset - height
+	visBot := total - w.lineOffset
+
+	if w.msgCursor < visTop {
+		// cursor scrolled above the top edge → scroll up
+		w.lineOffset = total - w.msgCursor - height
+		if max := clampMin(total-height, 0); w.lineOffset > max {
+			w.lineOffset = max
+		}
+	} else if w.msgCursor >= visBot {
+		// cursor scrolled below the bottom edge → scroll down
+		w.lineOffset = total - w.msgCursor - 1
+		if w.lineOffset < 0 {
+			w.lineOffset = 0
+		}
+	}
+
+	if w.msgCursor == 0 {
+		return m.maybeLoadOlder()
+	}
+	return nil
+}
+
+// chatCursorToBottom moves the cursor and viewport to the last (newest) line.
+func (m *Model) chatCursorToBottom(b *buffer, w *window) {
+	total := len(m.chatLines(b, w.width))
+	w.msgCursor = clampMin(total-1, 0)
+	w.colCursor = 0
+	w.lineOffset = 0
+}
+
+// clampCol returns col clamped to the visible character count of the cursor line.
+func (m *Model) clampCol(b *buffer, w *window, col int) int {
+	lines := m.chatLines(b, w.width)
+	if w.msgCursor < 0 || w.msgCursor >= len(lines) {
+		return 0
+	}
+	runes := []rune(ansi.Strip(lines[w.msgCursor]))
+	if col >= len(runes) {
+		col = clampMin(len(runes)-1, 0)
+	}
+	return col
 }
 
 func (m *Model) maybeLoadOlder() tea.Cmd {
@@ -574,6 +649,12 @@ func (m Model) handleTelegramEvent(e telegram.Event) (tea.Model, tea.Cmd) {
 			b.hasMore = ev.HasMore
 			b.loadingMsg = false
 			b.msgVersion++
+			// Place cursor at the newest (bottom) line for all windows.
+			for _, w := range m.wins {
+				if w.bufferID == b.id {
+					m.chatCursorToBottom(b, w)
+				}
+			}
 		}
 		return m, nil
 	case telegram.EventMessagesPrepended:
@@ -587,6 +668,11 @@ func (m Model) handleTelegramEvent(e telegram.Event) (tea.Model, tea.Cmd) {
 			}
 			b.messages = append(b.messages, ev.Message)
 			b.msgVersion++
+			for _, w := range m.wins {
+				if w.bufferID == b.id {
+					m.chatCursorToBottom(b, w)
+				}
+			}
 		}
 		return m, nil
 	case telegram.EventMessageReceived:
@@ -631,14 +717,34 @@ func (m Model) prependMessages(peerKey string, prefix []app.Message, hasMore boo
 	if len(prefix) == 0 {
 		return m
 	}
-	// The viewport is bottom-anchored, so prepending older messages does not
-	// shift what the user is looking at — no offset change is needed.
+
+	// Snapshot old line counts per window before mutation so we can compute
+	// how many visual lines were inserted at the top.
+	type snap struct {
+		w        *window
+		oldTotal int
+	}
+	var snaps []snap
+	for _, w := range m.wins {
+		if w.bufferID == b.id {
+			snaps = append(snaps, snap{w, len(m.chatLines(b, w.width))})
+		}
+	}
+
 	b.messages = append(prefix, b.messages...)
 	b.msgVersion++
-	// Clamp the active window only if it shows this buffer.
-	if w := m.activeWindow(); w.bufferID == b.id {
-		if max := m.maxLineOffset(b, w.width); w.lineOffset > max {
-			w.lineOffset = max
+
+	for _, s := range snaps {
+		newTotal := len(m.chatLines(b, s.w.width))
+		added := newTotal - s.oldTotal
+		// Shift the cursor so it stays on the same message.
+		s.w.msgCursor += added
+		if s.w.msgCursor >= newTotal {
+			s.w.msgCursor = clampMin(newTotal-1, 0)
+		}
+		// Clamp scroll offset.
+		if max := clampMin(newTotal-m.chatBodyHeight(), 0); s.w.lineOffset > max {
+			s.w.lineOffset = max
 		}
 	}
 	return m
@@ -667,6 +773,14 @@ func (m Model) onIncomingMessage(peerKey string, msg app.Message) Model {
 		// Keep a scrolled-up active window stable.
 		if isActiveChat && !wasAtBottom {
 			m.activeWindow().lineOffset += addedLines
+		}
+		// Auto-advance cursor for windows that were already at the bottom.
+		for _, w := range m.wins {
+			if w.bufferID == buf.id && w.lineOffset == 0 {
+				total := len(m.chatLines(buf, w.width))
+				w.msgCursor = clampMin(total-1, 0)
+				w.colCursor = 0
+			}
 		}
 	}
 

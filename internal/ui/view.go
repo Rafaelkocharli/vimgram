@@ -11,6 +11,7 @@ import (
 	"vimgram/internal/app"
 )
 
+
 // View implements tea.Model.
 func (m Model) View() string {
 	if !m.authed {
@@ -364,6 +365,9 @@ func (m Model) statusLine() string {
 		return badge + "  " + cmdLineStyle.Render(":"+m.cmdBuf+"█")
 	case m.err != nil:
 		return badge + "  " + errorStyle.Render("Error: "+m.err.Error())
+	case m.authed && m.vimMode == app.ModeNormal && m.activeBuffer().kind == bufChat:
+		w := m.activeWindow()
+		return badge + "  " + dimStyle.Render(fmt.Sprintf("Col %d", w.colCursor+1))
 	default:
 		return badge
 	}

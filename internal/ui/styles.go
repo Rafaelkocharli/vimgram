@@ -56,6 +56,15 @@ var (
 	statusTypingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffd75f"))
 	statusOfflineStyle = lipgloss.NewStyle().Faint(true)
 
+	// Chat cursor line (Normal mode): full-line background, and a block
+	// cursor character on the active column.
+	cursorLineStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#2d2d4a")).
+			Foreground(lipgloss.Color("#e0e0e0"))
+	cursorCharStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#5fafff")).
+			Foreground(lipgloss.Color("#000000"))
+
 	// Window focus / separator bars.
 	focusBarStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#5fafff"))
 	dimBarStyle   = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#444444"))

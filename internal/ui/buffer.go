@@ -149,6 +149,13 @@ type window struct {
 	cursor     int // chat-list selection
 	listOffset int // chat-list scroll
 
+	// Chat cursor (Normal mode): msgCursor is the absolute index into the
+	// flat chatLines slice (0 = oldest/top line). colCursor is the horizontal
+	// column within that line. Both are maintained so the viewport always
+	// keeps the cursor visible.
+	msgCursor int
+	colCursor int
+
 	// width is the inner content width this window was last rendered at.
 	// Cached by the layout compositor so scroll math (which depends on word
 	// wrapping) is available during key handling, before the next render.

@@ -317,24 +317,42 @@ func TestChatScrollByLine(t *testing.T) {
 	}
 	m = apply(m, telegramEventMsg{Event: telegram.EventMessagesLoaded{PeerKey: "u:1", Messages: msgs}})
 
-	if m.activeWindow().lineOffset != 0 {
+	w := m.activeWindow()
+	if w.lineOffset != 0 {
 		t.Fatal("should start at the bottom (offset 0)")
 	}
-	m = pressKey(m, keyRunes("k")) // scroll up one line
-	if m.activeWindow().lineOffset != 1 {
-		t.Errorf("k should scroll up one line, offset = %d", m.activeWindow().lineOffset)
+
+	// Cursor starts at the last visual line. Pressing k moves the cursor up
+	// within the viewport; lineOffset only changes when the cursor leaves the
+	// visible band. Check that the cursor actually moves.
+	startCursor := w.msgCursor
+	m = pressKey(m, keyRunes("k"))
+	if m.activeWindow().msgCursor >= startCursor {
+		t.Errorf("k should move cursor up, got %d (was %d)", m.activeWindow().msgCursor, startCursor)
 	}
-	m = pressKey(m, keyRunes("j")) // scroll back down
-	if m.activeWindow().lineOffset != 0 {
-		t.Errorf("j should scroll down one line, offset = %d", m.activeWindow().lineOffset)
+
+	// j moves cursor back down
+	m = pressKey(m, keyRunes("j"))
+	if m.activeWindow().msgCursor != startCursor {
+		t.Errorf("j should restore cursor to %d, got %d", startCursor, m.activeWindow().msgCursor)
 	}
-	m = pressKey(m, keyRunes("g")) // jump to oldest
+
+	// g jumps cursor to the top line (oldest message) and scrolls to show it
+	m = pressKey(m, keyRunes("g"))
+	if m.activeWindow().msgCursor != 0 {
+		t.Errorf("g should move cursor to line 0, got %d", m.activeWindow().msgCursor)
+	}
 	if m.activeWindow().lineOffset == 0 {
-		t.Error("g should jump to the top (non-zero offset)")
+		t.Error("g should scroll the viewport to show the top (non-zero lineOffset)")
 	}
-	m = pressKey(m, keyRunes("G")) // back to newest
+
+	// G jumps back to the newest message
+	m = pressKey(m, keyRunes("G"))
 	if m.activeWindow().lineOffset != 0 {
-		t.Error("G should jump back to the bottom")
+		t.Error("G should jump back to the bottom (lineOffset 0)")
+	}
+	if m.activeWindow().msgCursor != startCursor {
+		t.Errorf("G should restore cursor to %d, got %d", startCursor, m.activeWindow().msgCursor)
 	}
 }
 
