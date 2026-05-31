@@ -58,19 +58,27 @@ type (
 	EventUserTyping struct {
 		UserID int64
 	}
+	// EventMessageEdited fires after a message-edit attempt completes.
+	EventMessageEdited struct {
+		PeerKey string
+		MsgID   int
+		NewText string
+		Err     error
+	}
 	// EventError signals a non-fatal background error.
 	EventError struct{ Err error }
 )
 
-func (EventConnected) isEvent()         {}
-func (EventDialogsLoaded) isEvent()     {}
-func (EventMessagesLoaded) isEvent()    {}
+func (EventConnected) isEvent()        {}
+func (EventDialogsLoaded) isEvent()    {}
+func (EventMessagesLoaded) isEvent()   {}
 func (EventMessagesPrepended) isEvent() {}
-func (EventMessageSent) isEvent()       {}
-func (EventMessageReceived) isEvent()   {}
-func (EventUserStatus) isEvent()        {}
-func (EventUserTyping) isEvent()        {}
-func (EventError) isEvent()             {}
+func (EventMessageSent) isEvent()      {}
+func (EventMessageReceived) isEvent()  {}
+func (EventMessageEdited) isEvent()    {}
+func (EventUserStatus) isEvent()       {}
+func (EventUserTyping) isEvent()       {}
+func (EventError) isEvent()            {}
 
 // Client is the high-level Telegram facade used by the UI.
 type Client struct {
@@ -116,6 +124,11 @@ func (c *Client) LoadMore(peer app.PeerRef, beforeID int) {
 
 // SendMessage queues an outgoing message to peer. Pass replyToMsgID > 0 to
 // send as a reply to an existing message.
+// EditMessage queues an edit of an existing message.
+func (c *Client) EditMessage(peer app.PeerRef, msgID int, newText string) {
+	c.requests <- editMsgReq{peer: peer.(tg.InputPeerClass), msgID: msgID, newText: newText}
+}
+
 func (c *Client) SendMessage(peer app.PeerRef, text string, replyToMsgID int, replyToPreview string) {
 	c.requests <- sendMsgReq{
 		peer:           peer.(tg.InputPeerClass),
@@ -140,6 +153,11 @@ type (
 		text           string
 		replyToMsgID   int
 		replyToPreview string
+	}
+	editMsgReq struct {
+		peer    tg.InputPeerClass
+		msgID   int
+		newText string
 	}
 )
 
@@ -232,6 +250,9 @@ func (c *Client) handleRequest(ctx context.Context, tgc *telegram.Client, req an
 	case sendMsgReq:
 		msg, err := sendMessage(ctx, tgc, r.peer, r.text, r.replyToMsgID, r.replyToPreview, c.self)
 		c.emit(EventMessageSent{PeerKey: InputPeerKey(r.peer), Message: msg, Err: err})
+	case editMsgReq:
+		err := editMessage(ctx, tgc, r.peer, r.msgID, r.newText)
+		c.emit(EventMessageEdited{PeerKey: InputPeerKey(r.peer), MsgID: r.msgID, NewText: r.newText, Err: err})
 	}
 }
 
@@ -259,12 +280,25 @@ func sendMessage(
 		return app.Message{}, fmt.Errorf("send: %w", err)
 	}
 	return app.Message{
-		Out:            true,
-		Text:           text,
-		Date:           time.Now(),
-		From:           strings.TrimSpace(self.FirstName + " " + self.LastName),
-		NameColor:      -1,
-		ReplyToID:      replyToMsgID,
-		ReplyPreview:   replyToPreview,
+		Out:          true,
+		Text:         text,
+		Date:         time.Now(),
+		From:         strings.TrimSpace(self.FirstName + " " + self.LastName),
+		NameColor:    -1,
+		ReplyToID:    replyToMsgID,
+		ReplyPreview: replyToPreview,
 	}, nil
+}
+
+// editMessage updates the text of an existing message via the Telegram API.
+func editMessage(ctx context.Context, tgc *telegram.Client, peer tg.InputPeerClass, msgID int, newText string) error {
+	_, err := tgc.API().MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
+		Peer:    peer,
+		ID:      msgID,
+		Message: newText,
+	})
+	if err != nil {
+		return fmt.Errorf("edit: %w", err)
+	}
+	return nil
 }

@@ -287,6 +287,18 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			b.replyToPreview = previewSnippet(msg.Text)
 		}
 		return m, nil
+	case "e":
+		if msg := m.cursorMessage(b, w); msg != nil {
+			b.editMsgID = msg.ID
+			b.editOrigText = previewSnippet(msg.Text)
+			b.replyToID = 0
+			b.replyToPreview = ""
+			m.msgInput.SetValue(msg.Text)
+			m.vimMode = app.ModeEdit
+			m.msgInput.Focus()
+			return m, textinput.Blink
+		}
+		return m, nil
 	case ":":
 		m.enterCommandMode()
 		return m, nil
@@ -443,6 +455,13 @@ func (m *Model) maybeLoadOlder() tea.Cmd {
 func (m Model) updateChatEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		b := m.activeBuffer()
+		if b.editMsgID != 0 {
+			// Cancel edit: restore original draft and clear edit state.
+			m.msgInput.SetValue(b.draft)
+			b.editMsgID = 0
+			b.editOrigText = ""
+		}
 		m.vimMode = app.ModeNormal
 		m.msgInput.Blur()
 		return m, nil
@@ -461,8 +480,22 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.msgInput.SetValue("")
-	b.sending = true
 	b.draft = ""
+
+	// Edit mode: update an existing message instead of sending a new one.
+	if b.editMsgID != 0 {
+		editID := b.editMsgID
+		b.editMsgID = 0
+		b.editOrigText = ""
+		peer := b.peer
+		client := m.client
+		return m, func() tea.Msg {
+			client.EditMessage(peer, editID, text)
+			return nil
+		}
+	}
+
+	b.sending = true
 	m.activeWindow().lineOffset = 0
 	peer := b.peer
 	replyToMsgID := b.replyToID
@@ -741,6 +774,21 @@ func (m Model) handleTelegramEvent(e telegram.Event) (tea.Model, tea.Cmd) {
 		return m, nil
 	case telegram.EventMessageReceived:
 		return m.onIncomingMessage(ev.PeerKey, ev.Message), nil
+	case telegram.EventMessageEdited:
+		if ev.Err != nil {
+			m.err = ev.Err
+			return m, nil
+		}
+		if b := m.buffers.findByPeer(ev.PeerKey); b != nil {
+			for i := range b.messages {
+				if b.messages[i].ID == ev.MsgID {
+					b.messages[i].Text = ev.NewText
+					b.msgVersion++
+					break
+				}
+			}
+		}
+		return m, nil
 	case telegram.EventUserStatus:
 		if ev.Status != app.StatusUnknown {
 			m.statuses[ev.UserID] = ev.Status

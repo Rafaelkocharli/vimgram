@@ -31,9 +31,11 @@ type buffer struct {
 	loadingMsg  bool
 	loadingMore bool
 	sending     bool
-	draft         string // unsent compose text, preserved across buffer switches
-	replyToID     int    // 0 = no reply pending
+	draft          string // unsent compose text, preserved across buffer switches
+	replyToID      int    // 0 = no reply pending
 	replyToPreview string // short text snippet of the message being replied to
+	editMsgID      int    // 0 = not editing; >0 = ID of the message being edited
+	editOrigText   string // original text of the message being edited
 
 	msgVersion int
 	cache      *chatCache

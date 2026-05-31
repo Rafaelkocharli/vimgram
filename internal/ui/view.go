@@ -283,6 +283,8 @@ func (m Model) renderChatWindow(w *window, width int, focused bool) []string {
 	rows = append(rows, m.chatBody(b, w, width)...)
 	if b.replyToID != 0 {
 		rows = append(rows, m.chatReplyLine(b, width))
+	} else if b.editMsgID != 0 {
+		rows = append(rows, m.chatEditLine(b, width))
 	}
 	rows = append(rows, m.chatInputLine(b, focused))
 	return rows
@@ -292,9 +294,19 @@ func (m Model) renderChatWindow(w *window, width int, focused bool) []string {
 func (m Model) chatReplyLine(b *buffer, width int) string {
 	preview := b.replyToPreview
 	if preview == "" {
-		preview = "…"
+		preview = "..."
 	}
-	label := "↩ replying to “" + preview + "”"
+	label := fmt.Sprintf(`↩ replying to "%s"`, preview)
+	return dimStyle.Render(truncRunes(label, width))
+}
+
+// chatEditLine renders the one-line edit banner shown above the compose input.
+func (m Model) chatEditLine(b *buffer, width int) string {
+	preview := b.editOrigText
+	if preview == "" {
+		preview = "..."
+	}
+	label := fmt.Sprintf(`✏ editing: "%s"`, preview)
 	return dimStyle.Render(truncRunes(label, width))
 }
 

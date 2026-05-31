@@ -24,7 +24,8 @@ func (m *Model) chatBodyHeight() int {
 	h := m.heightOrDefault()
 	extra := 0
 	if m.authed {
-		if b := m.activeBuffer(); b != nil && b.kind == bufChat && b.replyToID != 0 {
+		if b := m.activeBuffer(); b != nil && b.kind == bufChat &&
+			(b.replyToID != 0 || b.editMsgID != 0) {
 			extra = 1
 		}
 	}
