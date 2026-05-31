@@ -49,6 +49,12 @@ type Model struct {
 	// "No write since last change. Discard draft? [y/N]".
 	discardPrompt bool
 
+	// Delete-message confirmation: true while waiting for "Delete message? [y/N]".
+	// deleteRevoke=true means delete for everyone; false means only for self.
+	pendingDelete bool // true after "d", awaiting m/d/a
+	deletePrompt  bool
+	deleteRevoke  bool
+
 	// Channels and shared state
 	promptAnswers chan string
 	err           error

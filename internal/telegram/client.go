@@ -65,6 +65,12 @@ type (
 		NewText string
 		Err     error
 	}
+	// EventMessageDeleted fires after a message-delete attempt completes.
+	EventMessageDeleted struct {
+		PeerKey string
+		MsgID   int
+		Err     error
+	}
 	// EventError signals a non-fatal background error.
 	EventError struct{ Err error }
 )
@@ -75,8 +81,9 @@ func (EventMessagesLoaded) isEvent()   {}
 func (EventMessagesPrepended) isEvent() {}
 func (EventMessageSent) isEvent()      {}
 func (EventMessageReceived) isEvent()  {}
-func (EventMessageEdited) isEvent()    {}
-func (EventUserStatus) isEvent()       {}
+func (EventMessageEdited) isEvent()   {}
+func (EventMessageDeleted) isEvent()  {}
+func (EventUserStatus) isEvent()      {}
 func (EventUserTyping) isEvent()       {}
 func (EventError) isEvent()            {}
 
@@ -124,6 +131,11 @@ func (c *Client) LoadMore(peer app.PeerRef, beforeID int) {
 
 // SendMessage queues an outgoing message to peer. Pass replyToMsgID > 0 to
 // send as a reply to an existing message.
+// DeleteMessage queues deletion of a message. revoke=true deletes for everyone.
+func (c *Client) DeleteMessage(peer app.PeerRef, msgID int, revoke bool) {
+	c.requests <- deleteMsgReq{peer: peer.(tg.InputPeerClass), msgID: msgID, revoke: revoke}
+}
+
 // EditMessage queues an edit of an existing message.
 func (c *Client) EditMessage(peer app.PeerRef, msgID int, newText string) {
 	c.requests <- editMsgReq{peer: peer.(tg.InputPeerClass), msgID: msgID, newText: newText}
@@ -158,6 +170,11 @@ type (
 		peer    tg.InputPeerClass
 		msgID   int
 		newText string
+	}
+	deleteMsgReq struct {
+		peer   tg.InputPeerClass
+		msgID  int
+		revoke bool // true = delete for everyone
 	}
 )
 
@@ -253,6 +270,9 @@ func (c *Client) handleRequest(ctx context.Context, tgc *telegram.Client, req an
 	case editMsgReq:
 		err := editMessage(ctx, tgc, r.peer, r.msgID, r.newText)
 		c.emit(EventMessageEdited{PeerKey: InputPeerKey(r.peer), MsgID: r.msgID, NewText: r.newText, Err: err})
+	case deleteMsgReq:
+		err := deleteMessage(ctx, tgc, r.msgID, r.revoke)
+		c.emit(EventMessageDeleted{PeerKey: InputPeerKey(r.peer), MsgID: r.msgID, Err: err})
 	}
 }
 
@@ -288,6 +308,18 @@ func sendMessage(
 		ReplyToID:    replyToMsgID,
 		ReplyPreview: replyToPreview,
 	}, nil
+}
+
+// deleteMessage removes a message. revoke=true deletes for all participants.
+func deleteMessage(ctx context.Context, tgc *telegram.Client, msgID int, revoke bool) error {
+	_, err := tgc.API().MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
+		Revoke: revoke,
+		ID:     []int{msgID},
+	})
+	if err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	return nil
 }
 
 // editMessage updates the text of an existing message via the Telegram API.

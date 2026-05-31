@@ -84,9 +84,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !m.authed {
 		return m.updateAuth(msg)
 	}
-	// Discard-draft confirmation takes priority over everything else.
+	// Confirmations take priority over everything else.
 	if m.discardPrompt {
 		return m.handleDiscardPrompt(msg)
+	}
+	if m.deletePrompt {
+		return m.handleDeletePrompt(msg)
 	}
 	// Any key dismisses the :ls overlay.
 	if len(m.overlay) > 0 {
@@ -271,6 +274,24 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	w := m.activeWindow()
 	b := m.activeBuffer()
 
+	// Handle second key of "d" chord.
+	if m.pendingDelete {
+		m.pendingDelete = false
+		switch msg.String() {
+		case "m", "d":
+			if cm := m.cursorMessage(b, w); cm != nil {
+				m.deleteRevoke = false
+				m.deletePrompt = true
+			}
+		case "a":
+			if cm := m.cursorMessage(b, w); cm != nil {
+				m.deleteRevoke = true
+				m.deletePrompt = true
+			}
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "esc":
 		draft := strings.TrimSpace(m.msgInput.Value())
@@ -280,6 +301,11 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		b.replyToID = 0
 		b.replyToPreview = ""
+		return m, nil
+	case "d":
+		if m.cursorMessage(b, w) != nil {
+			m.pendingDelete = true
+		}
 		return m, nil
 	case "r":
 		if msg := m.cursorMessage(b, w); msg != nil {
@@ -507,6 +533,30 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 	client := m.client
 	return m, func() tea.Msg {
 		client.SendMessage(peer, text, replyToMsgID, replyToPreview)
+		return nil
+	}
+}
+
+// ----- Delete confirmation ------------------------------------------------
+
+// handleDeletePrompt handles the y/N answer to "Delete message?".
+func (m Model) handleDeletePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.deletePrompt = false
+	if msg.String() != "y" && msg.String() != "Y" {
+		return m, nil
+	}
+	b := m.activeBuffer()
+	w := m.activeWindow()
+	cm := m.cursorMessage(b, w)
+	if cm == nil {
+		return m, nil
+	}
+	msgID := cm.ID
+	revoke := m.deleteRevoke
+	peer := b.peer
+	client := m.client
+	return m, func() tea.Msg {
+		client.DeleteMessage(peer, msgID, revoke)
 		return nil
 	}
 }
@@ -786,6 +836,30 @@ func (m Model) handleTelegramEvent(e telegram.Event) (tea.Model, tea.Cmd) {
 				if b.messages[i].ID == ev.MsgID {
 					b.messages[i].Text = ev.NewText
 					b.msgVersion++
+					break
+				}
+			}
+		}
+		return m, nil
+	case telegram.EventMessageDeleted:
+		if ev.Err != nil {
+			m.err = ev.Err
+			return m, nil
+		}
+		if b := m.buffers.findByPeer(ev.PeerKey); b != nil {
+			for i, msg := range b.messages {
+				if msg.ID == ev.MsgID {
+					b.messages = append(b.messages[:i], b.messages[i+1:]...)
+					b.msgVersion++
+					// Keep cursor in bounds.
+					for _, w := range m.wins {
+						if w.bufferID == b.id {
+							total := len(m.chatLines(b, w.width))
+							if w.msgCursor >= total {
+								w.msgCursor = clampMin(total-1, 0)
+							}
+						}
+					}
 					break
 				}
 			}
