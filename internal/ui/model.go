@@ -55,6 +55,11 @@ type Model struct {
 	deletePrompt  bool
 	deleteRevoke  bool
 
+	// Unnamed yank register — holds the last yanked message text (yy).
+	// Not connected to the system clipboard.
+	pendingYank bool   // true after "y", awaiting second "y"
+	yankReg     string // "" means empty
+
 	// Channels and shared state
 	promptAnswers chan string
 	err           error

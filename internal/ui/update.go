@@ -274,6 +274,17 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	w := m.activeWindow()
 	b := m.activeBuffer()
 
+	// Handle second key of "y" chord.
+	if m.pendingYank {
+		m.pendingYank = false
+		if msg.String() == "y" {
+			if cm := m.cursorMessage(b, w); cm != nil {
+				m.yankReg = cm.Text
+			}
+		}
+		return m, nil
+	}
+
 	// Handle second key of "d" chord.
 	if m.pendingDelete {
 		m.pendingDelete = false
@@ -301,6 +312,19 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		b.replyToID = 0
 		b.replyToPreview = ""
+		return m, nil
+	case "y":
+		if m.cursorMessage(b, w) != nil {
+			m.pendingYank = true
+		}
+		return m, nil
+	case "p":
+		if m.yankReg != "" {
+			m.msgInput.SetValue(m.yankReg)
+			m.vimMode = app.ModeEdit
+			m.msgInput.Focus()
+			return m, textinput.Blink
+		}
 		return m, nil
 	case "d":
 		if m.cursorMessage(b, w) != nil {
