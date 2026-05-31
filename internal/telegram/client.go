@@ -116,8 +116,13 @@ func (c *Client) LoadMore(peer app.PeerRef, beforeID int) {
 
 // SendMessage queues an outgoing message to peer. Pass replyToMsgID > 0 to
 // send as a reply to an existing message.
-func (c *Client) SendMessage(peer app.PeerRef, text string, replyToMsgID int) {
-	c.requests <- sendMsgReq{peer: peer.(tg.InputPeerClass), text: text, replyToMsgID: replyToMsgID}
+func (c *Client) SendMessage(peer app.PeerRef, text string, replyToMsgID int, replyToPreview string) {
+	c.requests <- sendMsgReq{
+		peer:           peer.(tg.InputPeerClass),
+		text:           text,
+		replyToMsgID:   replyToMsgID,
+		replyToPreview: replyToPreview,
+	}
 }
 
 // Internal request types passed via c.requests.
@@ -131,9 +136,10 @@ type (
 		beforeID int
 	}
 	sendMsgReq struct {
-		peer         tg.InputPeerClass
-		text         string
-		replyToMsgID int
+		peer           tg.InputPeerClass
+		text           string
+		replyToMsgID   int
+		replyToPreview string
 	}
 )
 
@@ -224,7 +230,7 @@ func (c *Client) handleRequest(ctx context.Context, tgc *telegram.Client, req an
 		}
 		c.emit(EventMessagesPrepended{PeerKey: InputPeerKey(r.peer), Messages: msgs, HasMore: more})
 	case sendMsgReq:
-		msg, err := sendMessage(ctx, tgc, r.peer, r.text, r.replyToMsgID, c.self)
+		msg, err := sendMessage(ctx, tgc, r.peer, r.text, r.replyToMsgID, r.replyToPreview, c.self)
 		c.emit(EventMessageSent{PeerKey: InputPeerKey(r.peer), Message: msg, Err: err})
 	}
 }
@@ -237,6 +243,7 @@ func sendMessage(
 	peer tg.InputPeerClass,
 	text string,
 	replyToMsgID int,
+	replyToPreview string,
 	self app.Self,
 ) (app.Message, error) {
 	req := &tg.MessagesSendMessageRequest{
@@ -252,10 +259,12 @@ func sendMessage(
 		return app.Message{}, fmt.Errorf("send: %w", err)
 	}
 	return app.Message{
-		Out:       true,
-		Text:      text,
-		Date:      time.Now(),
-		From:      strings.TrimSpace(self.FirstName + " " + self.LastName),
-		NameColor: -1,
+		Out:            true,
+		Text:           text,
+		Date:           time.Now(),
+		From:           strings.TrimSpace(self.FirstName + " " + self.LastName),
+		NameColor:      -1,
+		ReplyToID:      replyToMsgID,
+		ReplyPreview:   replyToPreview,
 	}, nil
 }

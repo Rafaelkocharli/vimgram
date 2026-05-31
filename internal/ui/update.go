@@ -466,11 +466,12 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 	m.activeWindow().lineOffset = 0
 	peer := b.peer
 	replyToMsgID := b.replyToID
+	replyToPreview := b.replyToPreview
 	b.replyToID = 0
 	b.replyToPreview = ""
 	client := m.client
 	return m, func() tea.Msg {
-		client.SendMessage(peer, text, replyToMsgID)
+		client.SendMessage(peer, text, replyToMsgID, replyToPreview)
 		return nil
 	}
 }
