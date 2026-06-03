@@ -207,6 +207,14 @@ func (m Model) updateChatList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "G", "end":
 		w.cursor = len(m.visibleDialogs()) - 1
 		m.adjustListOffset()
+	case "H":
+		w.cursor = w.listOffset
+	case "L":
+		last := w.listOffset + m.visibleRows() - 1
+		if max := len(m.visibleDialogs()) - 1; last > max {
+			last = max
+		}
+		w.cursor = last
 	case "enter":
 		return m.openSelectedChat()
 	}
@@ -457,6 +465,27 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "G", "end":
 		m.chatCursorToBottom(b, w)
+	case "H":
+		// Jump to the top line of the visible viewport.
+		total := len(m.chatLines(b, w.width))
+		top := total - w.lineOffset - height
+		if top < 0 {
+			top = 0
+		}
+		w.msgCursor = top
+		w.colCursor = 0
+	case "L":
+		// Jump to the bottom line of the visible viewport.
+		total := len(m.chatLines(b, w.width))
+		bot := total - w.lineOffset - 1
+		if bot < 0 {
+			bot = 0
+		}
+		if bot >= total {
+			bot = total - 1
+		}
+		w.msgCursor = bot
+		w.colCursor = 0
 	}
 	return m, nil
 }
