@@ -18,10 +18,10 @@ const (
 
 // startsNewGroup reports whether cur should begin a new header block: when it
 // is the first message, the sender changed, more than groupGap elapsed since
-// the previous message, or cur is a reply (replies always carry a header so
-// the "replies to ..." line can be shown).
+// the previous message, or cur is a reply/forward (those always carry a header
+// so the hint can be shown inline).
 func startsNewGroup(prev *app.Message, cur app.Message) bool {
-	if cur.ReplyToID != 0 {
+	if cur.ReplyToID != 0 || cur.ForwardedFrom != "" {
 		return true
 	}
 	if prev == nil {
@@ -63,21 +63,16 @@ func senderName(msg app.Message, chatName, selfName string) string {
 // same sender omit the header and just show their (wrapped) text.
 func renderMessageBlock(cur app.Message, chatName, selfName string, width int, withHeader bool) []string {
 	var lines []string
-	if cur.ForwardedFrom != "" {
-		label := "⟫ forwarded from " + cur.ForwardedFrom
-		r := []rune(label)
-		if len(r) > width {
-			label = string(r[:width-1]) + "…"
-		}
-		lines = append(lines, dimStyle.Render(label))
-	}
 	if withHeader {
 		ts := cur.Date.Local().Format("15:04")
 		name := senderName(cur, chatName, selfName)
 		nameStyled := nameStyle(cur.NameColor, name).Render(name)
 		header := dimStyle.Render("["+ts+"] ") + nameStyled
-		if cur.ReplyToID != 0 {
-			header += "  " + dimStyle.Render(replyHint(cur.ReplyPreview, width-lipgloss.Width(header)-1))
+		room := width - lipgloss.Width(header) - 2
+		if cur.ForwardedFrom != "" {
+			header += "  " + dimStyle.Render(forwardHint(cur.ForwardedFrom, room))
+		} else if cur.ReplyToID != 0 {
+			header += "  " + dimStyle.Render(replyHint(cur.ReplyPreview, room))
 		}
 		lines = append(lines, header)
 	}
@@ -98,6 +93,20 @@ func nameStyle(idx int, name string) lipgloss.Style {
 	}
 	c := namePalette[((idx%len(namePalette))+len(namePalette))%len(namePalette)]
 	return lipgloss.NewStyle().Bold(true).Foreground(c)
+}
+
+// forwardHint renders the dim "forwarded from name" suffix for a header line.
+func forwardHint(from string, room int) string {
+	const prefix = "forwarded from "
+	if room < len(prefix)+1 {
+		return "fwd"
+	}
+	max := room - len(prefix)
+	r := []rune(from)
+	if len(r) > max {
+		from = string(r[:max-1]) + "…"
+	}
+	return prefix + from
 }
 
 // replyHint renders the dim "replies to "snippet…"" suffix for a header,
