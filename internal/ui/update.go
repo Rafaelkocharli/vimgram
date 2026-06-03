@@ -309,6 +309,40 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle second key of "m" chord: set mark.
+	if m.pendingMark {
+		m.pendingMark = false
+		r := []rune(msg.String())
+		if len(r) == 1 && r[0] >= 'a' && r[0] <= 'z' {
+			if b.marks == nil {
+				b.marks = make(map[rune]int)
+			}
+			b.marks[r[0]] = w.msgCursor
+		}
+		return m, nil
+	}
+
+	// Handle second key of "'" chord: jump to mark.
+	if m.pendingJump {
+		m.pendingJump = false
+		r := []rune(msg.String())
+		if len(r) == 1 && r[0] >= 'a' && r[0] <= 'z' {
+			if pos, ok := b.marks[r[0]]; ok {
+				total := len(m.chatLines(b, w.width))
+				if pos < total {
+					w.msgCursor = pos
+					w.colCursor = 0
+					// Center the mark in the viewport.
+					w.lineOffset = clampMin(total-pos-height/2, 0)
+					if w.lineOffset > clampMin(total-height, 0) {
+						w.lineOffset = clampMin(total-height, 0)
+					}
+				}
+			}
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "esc":
 		draft := strings.TrimSpace(m.msgInput.Value())
@@ -338,6 +372,16 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		if !readOnly && m.cursorMessage(b, w) != nil {
 			m.pendingDelete = true
+		}
+		return m, nil
+	case "m":
+		if len(m.chatLines(b, w.width)) > 0 {
+			m.pendingMark = true
+		}
+		return m, nil
+	case "'":
+		if b.marks != nil && len(b.marks) > 0 {
+			m.pendingJump = true
 		}
 		return m, nil
 	case "f":

@@ -68,6 +68,10 @@ type Model struct {
 	pendingYank bool   // true after "y", awaiting second "y"
 	yankReg     string // "" means empty
 
+	// Vim marks: "m" then a letter sets a mark; "'" then a letter jumps to it.
+	pendingMark bool // true after "m", awaiting the mark letter
+	pendingJump bool // true after "'", awaiting the mark letter
+
 	// Channels and shared state
 	promptAnswers chan string
 	err           error

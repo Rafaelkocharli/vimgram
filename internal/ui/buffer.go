@@ -38,6 +38,8 @@ type buffer struct {
 	editMsgID      int    // 0 = not editing; >0 = ID of the message being edited
 	editOrigText   string // original text of the message being edited
 
+	marks      map[rune]int // vim marks: letter → msgCursor index
+
 	msgVersion int
 	cache      *chatCache
 
