@@ -17,6 +17,9 @@ func (m Model) View() string {
 	if !m.authed {
 		return m.viewAuth()
 	}
+	if m.forwardActive {
+		return m.viewForwardOverlay()
+	}
 	if len(m.overlay) > 0 {
 		return m.viewOverlay()
 	}
@@ -140,6 +143,43 @@ func (m Model) viewAuthFooter() string {
 		return footerStyle.Render("enter — submit · esc — quit")
 	}
 	return footerStyle.Render("esc — quit")
+}
+
+// ----- Forward overlay ----------------------------------------------------
+
+func (m Model) viewForwardOverlay() string {
+	h := m.heightOrDefault()
+	w := m.widthOrDefault()
+	visible := m.visibleDialogs()
+
+	lines := make([]string, 0, h)
+	lines = append(lines, chatTitleStyle.Render(truncRunes("Forward to:", w)))
+
+	bodyRows := h - 3 // header + footer + status
+	start := m.forwardOffset
+	end := start + bodyRows
+	if end > len(visible) {
+		end = len(visible)
+	}
+	for i := start; i < end; i++ {
+		d := visible[i]
+		chip := dialogChip(d.Kind)
+		title := truncRunes(titleOrFallback(d.Title), w-12)
+		row := "  " + chip + "  " + title
+		if i == m.forwardCursor {
+			row = selBg.Render(padTo(row, w))
+		}
+		lines = append(lines, row)
+	}
+	for len(lines) < h-2 {
+		lines = append(lines, "")
+	}
+	lines = append(lines, footerStyle.Render("enter — forward · esc — cancel"))
+	lines = append(lines, m.renderModeBadge())
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ----- :ls overlay --------------------------------------------------------

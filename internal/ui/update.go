@@ -84,6 +84,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !m.authed {
 		return m.updateAuth(msg)
 	}
+	// Forward overlay intercepts all keys.
+	if m.forwardActive {
+		return m.handleForwardOverlay(msg)
+	}
 	// Confirmations take priority over everything else.
 	if m.discardPrompt {
 		return m.handleDiscardPrompt(msg)
@@ -336,6 +340,15 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pendingDelete = true
 		}
 		return m, nil
+	case "f":
+		if cm := m.cursorMessage(b, w); cm != nil {
+			m.forwardActive = true
+			m.forwardSrcPeer = b.peer
+			m.forwardMsgID = cm.ID
+			m.forwardCursor = 0
+			m.forwardOffset = 0
+		}
+		return m, nil
 	case "r":
 		if !readOnly {
 			if msg := m.cursorMessage(b, w); msg != nil {
@@ -572,6 +585,48 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 		client.SendMessage(peer, text, replyToMsgID, replyToPreview)
 		return nil
 	}
+}
+
+// ----- Forward overlay ----------------------------------------------------
+
+func (m Model) handleForwardOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	visible := m.visibleDialogs()
+	h := m.heightOrDefault()
+	bodyRows := h - 3
+
+	switch msg.String() {
+	case "esc":
+		m.forwardActive = false
+		return m, nil
+	case "j", "down":
+		if m.forwardCursor < len(visible)-1 {
+			m.forwardCursor++
+			if m.forwardCursor >= m.forwardOffset+bodyRows {
+				m.forwardOffset = m.forwardCursor - bodyRows + 1
+			}
+		}
+	case "k", "up":
+		if m.forwardCursor > 0 {
+			m.forwardCursor--
+			if m.forwardCursor < m.forwardOffset {
+				m.forwardOffset = m.forwardCursor
+			}
+		}
+	case "enter":
+		if len(visible) == 0 {
+			return m, nil
+		}
+		dest := visible[m.forwardCursor]
+		m.forwardActive = false
+		srcPeer := m.forwardSrcPeer
+		msgID := m.forwardMsgID
+		client := m.client
+		return m, func() tea.Msg {
+			client.ForwardMessage(srcPeer, dest.Peer, msgID)
+			return nil
+		}
+	}
+	return m, nil
 }
 
 // ----- Delete confirmation ------------------------------------------------

@@ -32,6 +32,13 @@ type Model struct {
 	pendingCtrlW bool     // true after <C-w>, awaiting the direction key
 	overlay      []string // non-empty => :ls buffer-list overlay is shown
 
+	// Forward overlay: shown when the user presses f on a message.
+	forwardActive bool
+	forwardSrcPeer app.PeerRef
+	forwardMsgID   int
+	forwardCursor  int
+	forwardOffset  int
+
 	// Self + dialog list (global Telegram state, rendered by the Chats buffer).
 	self        app.Self
 	dialogs     []app.Dialog
