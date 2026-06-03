@@ -46,7 +46,7 @@ func TestBuildMessage(t *testing.T) {
 	t.Run("text with sender", func(t *testing.T) {
 		mm := &tg.Message{ID: 10, Out: false, Message: "hello", Date: 1000}
 		mm.SetFromID(&tg.PeerUser{UserID: 1})
-		got := buildMessage(mm, users, nil)
+		got := buildMessage(mm, users, nil, nil)
 		if got.ID != 10 || got.Text != "hello" || got.From != "Ada Lovelace" {
 			t.Errorf("buildMessage = %+v", got)
 		}
@@ -57,14 +57,14 @@ func TestBuildMessage(t *testing.T) {
 
 	t.Run("empty text becomes media placeholder", func(t *testing.T) {
 		mm := &tg.Message{ID: 11, Message: ""}
-		if got := buildMessage(mm, users, nil); got.Text != "[media]" {
+		if got := buildMessage(mm, users, nil, nil); got.Text != "[media]" {
 			t.Errorf("empty message should render as [media], got %q", got.Text)
 		}
 	})
 
 	t.Run("outgoing flag", func(t *testing.T) {
 		mm := &tg.Message{ID: 12, Out: true, Message: "yo"}
-		if got := buildMessage(mm, users, nil); !got.Out {
+		if got := buildMessage(mm, users, nil, nil); !got.Out {
 			t.Error("Out flag should be carried over")
 		}
 	})
@@ -74,7 +74,7 @@ func TestBuildMessage(t *testing.T) {
 		rh.SetReplyToMsgID(5)
 		mm := &tg.Message{ID: 20, Message: "ack"}
 		mm.SetReplyTo(rh)
-		got := buildMessage(mm, users, map[int]string{5: "original text"})
+		got := buildMessage(mm, users, nil, map[int]string{5: "original text"})
 		if got.ReplyToID != 5 {
 			t.Errorf("ReplyToID = %d, want 5", got.ReplyToID)
 		}
@@ -88,7 +88,7 @@ func TestBuildMessage(t *testing.T) {
 		rh.SetReplyToMsgID(99)
 		mm := &tg.Message{ID: 21, Message: "ack"}
 		mm.SetReplyTo(rh)
-		got := buildMessage(mm, users, nil)
+		got := buildMessage(mm, users, nil, nil)
 		if got.ReplyToID != 99 || got.ReplyPreview != "" {
 			t.Errorf("expected reply id 99 with empty preview, got %+v", got)
 		}

@@ -90,6 +90,9 @@ type Message struct {
 	ReplyToID int
 	// ReplyPreview is a short snippet of the replied-to message, when known.
 	ReplyPreview string
+	// ForwardedFrom is the name of the original sender/chat when the message
+	// was forwarded; empty if the message is not a forward.
+	ForwardedFrom string
 }
 
 // Self is the authenticated user's profile snapshot.

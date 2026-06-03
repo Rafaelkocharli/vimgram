@@ -23,7 +23,7 @@ func buildDispatcher(h updateHandlers) tg.UpdateDispatcher {
 	handleMsg := func(mm *tg.Message, ent tg.Entities) {
 		// No replied-to text here; the UI fills it in from already-loaded
 		// messages in the buffer.
-		h.onMessage(PeerKey(mm.PeerID), buildMessage(mm, ent.Users, nil))
+		h.onMessage(PeerKey(mm.PeerID), buildMessage(mm, ent.Users, ent.Channels, nil))
 	}
 
 	d.OnNewMessage(func(_ context.Context, e tg.Entities, u *tg.UpdateNewMessage) error {

@@ -63,6 +63,14 @@ func senderName(msg app.Message, chatName, selfName string) string {
 // same sender omit the header and just show their (wrapped) text.
 func renderMessageBlock(cur app.Message, chatName, selfName string, width int, withHeader bool) []string {
 	var lines []string
+	if cur.ForwardedFrom != "" {
+		label := "⟫ forwarded from " + cur.ForwardedFrom
+		r := []rune(label)
+		if len(r) > width {
+			label = string(r[:width-1]) + "…"
+		}
+		lines = append(lines, dimStyle.Render(label))
+	}
 	if withHeader {
 		ts := cur.Date.Local().Format("15:04")
 		name := senderName(cur, chatName, selfName)

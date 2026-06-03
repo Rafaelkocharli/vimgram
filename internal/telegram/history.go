@@ -41,12 +41,13 @@ func fetchHistory(ctx context.Context, client *telegram.Client, peer tg.InputPee
 		return nil, false, fmt.Errorf("history: %w", err)
 	}
 
-	rawMsgs, users, err := extractHistoryPage(raw)
+	rawMsgs, users, chats, err := extractHistoryPage(raw)
 	if err != nil {
 		return nil, false, err
 	}
 
 	byUser := indexUsers(users)
+	_, byChannel := indexChatsAndChannels(chats)
 	byID := indexMessageTexts(rawMsgs)
 	messages := make([]app.Message, 0, len(rawMsgs))
 	for _, m := range rawMsgs {
@@ -54,7 +55,7 @@ func fetchHistory(ctx context.Context, client *telegram.Client, peer tg.InputPee
 		if !ok {
 			continue
 		}
-		messages = append(messages, buildMessage(mm, byUser, byID))
+		messages = append(messages, buildMessage(mm, byUser, byChannel, byID))
 	}
 
 	// API returns newest-first; flip to chronological.
@@ -63,22 +64,22 @@ func fetchHistory(ctx context.Context, client *telegram.Client, peer tg.InputPee
 	return messages, hasMore, nil
 }
 
-func extractHistoryPage(raw tg.MessagesMessagesClass) ([]tg.MessageClass, []tg.UserClass, error) {
+func extractHistoryPage(raw tg.MessagesMessagesClass) ([]tg.MessageClass, []tg.UserClass, []tg.ChatClass, error) {
 	switch r := raw.(type) {
 	case *tg.MessagesMessages:
-		return r.Messages, r.Users, nil
+		return r.Messages, r.Users, r.Chats, nil
 	case *tg.MessagesMessagesSlice:
-		return r.Messages, r.Users, nil
+		return r.Messages, r.Users, r.Chats, nil
 	case *tg.MessagesChannelMessages:
-		return r.Messages, r.Users, nil
+		return r.Messages, r.Users, r.Chats, nil
 	default:
-		return nil, nil, fmt.Errorf("unexpected history response: %T", raw)
+		return nil, nil, nil, fmt.Errorf("unexpected history response: %T", raw)
 	}
 }
 
 // buildMessage converts a gotd Message into the domain Message.
 // repliesByID maps message id -> short text; nil is fine (no preview enrichment).
-func buildMessage(mm *tg.Message, users map[int64]*tg.User, repliesByID map[int]string) app.Message {
+func buildMessage(mm *tg.Message, users map[int64]*tg.User, channels map[int64]*tg.Channel, repliesByID map[int]string) app.Message {
 	m := app.Message{
 		ID:        mm.ID,
 		Out:       mm.Out,
@@ -96,6 +97,9 @@ func buildMessage(mm *tg.Message, users map[int64]*tg.User, repliesByID map[int]
 				m.NameColor = peerColorIndex(u)
 			}
 		}
+	}
+	if fwd, ok := mm.GetFwdFrom(); ok {
+		m.ForwardedFrom = fwdName(fwd, users, channels)
 	}
 	if rh, ok := mm.GetReplyTo(); ok {
 		if mrh, ok := rh.(*tg.MessageReplyHeader); ok {
@@ -146,4 +150,29 @@ func reverse(m []app.Message) {
 	for i, j := 0, len(m)-1; i < j; i, j = i+1, j-1 {
 		m[i], m[j] = m[j], m[i]
 	}
+}
+
+// fwdName extracts a human-readable name from a MessageFwdHeader.
+// It prefers the user's display name (looked up from the users index) over the
+// raw FromName string that Telegram provides for channels and hidden accounts.
+func fwdName(fwd tg.MessageFwdHeader, users map[int64]*tg.User, channels map[int64]*tg.Channel) string {
+	if peer, ok := fwd.GetFromID(); ok {
+		switch p := peer.(type) {
+		case *tg.PeerUser:
+			if u, ok := users[p.UserID]; ok {
+				name := strings.TrimSpace(u.FirstName + " " + u.LastName)
+				if name != "" {
+					return name
+				}
+			}
+		case *tg.PeerChannel:
+			if c, ok := channels[p.ChannelID]; ok && c.Title != "" {
+				return c.Title
+			}
+		}
+	}
+	if name, ok := fwd.GetFromName(); ok && name != "" {
+		return name
+	}
+	return ""
 }
