@@ -115,8 +115,8 @@ func (m Model) chatViewport(b *buffer, w *window, width int) []string {
 	return out
 }
 
-// renderCursorLine strips ANSI from line, applies the cursor-line background
-// across the full width, and places a block cursor at column col.
+// renderCursorLine strips ANSI from line and applies the cursor-line
+// background across the full width.
 func renderCursorLine(line string, col int, width int) string {
 	plain := ansi.Strip(line)
 	runes := []rune(plain)
@@ -126,17 +126,7 @@ func renderCursorLine(line string, col int, width int) string {
 		runes = append(runes, ' ')
 	}
 
-	if col < 0 {
-		col = 0
-	}
-	if col >= len(runes) {
-		col = len(runes) - 1
-	}
-
-	before := cursorLineStyle.Render(string(runes[:col]))
-	cur := cursorCharStyle.Render(string(runes[col : col+1]))
-	after := cursorLineStyle.Render(string(runes[col+1:]))
-	return before + cur + after
+	return cursorLineStyle.Render(string(runes))
 }
 
 // maxLineOffset is the furthest a window can scroll up for a given buffer/width.

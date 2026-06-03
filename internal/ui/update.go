@@ -437,12 +437,6 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.vimMode = app.ModeEdit
 		m.msgInput.Focus()
 		return m, textinput.Blink
-	case "h":
-		if w.colCursor > 0 {
-			w.colCursor--
-		}
-	case "l":
-		w.colCursor = m.clampCol(b, w, w.colCursor+1)
 	case "k", "up":
 		if cmd := m.moveMsgCursor(-1); cmd != nil {
 			return m, cmd
