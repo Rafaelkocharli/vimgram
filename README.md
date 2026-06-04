@@ -13,6 +13,7 @@ Vimgram brings the modal editing model — and the **buffer/window** data model 
 you already know to Telegram:
 
 - **Normal mode** to move around, **Insert mode** to type, **Command mode** (`:`)
+- **Visual mode** to select multiple messages at once — yank, reply, delete, or forward them all in one go
 - **Buffers**: each open chat is a buffer — `:b`, `:bnext`, `:bprev`, `:bdelete`, `:ls`
 - **Windows**: split the screen vertically and view two chats side by side —
   `:vsplit`, `<C-w>` to move between windows
@@ -26,19 +27,21 @@ No mouse, no clutter, no context switch.
 - **Vertical splits** — `:vsplit` / `:vs [buffer]` to view chats side by side,
   `<C-w>h` / `<C-w>l` / `<C-w>w` to move focus
 - **Modal controls** — `NORMAL` · `INSERT` · `COMMAND` · `VISUAL`
+- **Visual mode** — select a range of messages with `v` + `j`/`k`, then yank, reply, forward, or delete the whole selection
+- **Vim marks** — `ma` to bookmark a message, `'a` to jump back to it
 - **Message cursor** — vim-style caret in chat view; `j`/`k` move the cursor,
-  viewport scrolls when it hits the edge; `h`/`l` for horizontal movement
+  `H`/`L` jump to the top/bottom of the viewport
 - **Reply** — press `r` on any message to reply; banner shows above the input
 - **Edit** — press `e` on your message to edit it in-place
-- **Delete** — `dd`/`dm` delete for yourself, `da` delete for everyone; both ask
-  for confirmation first
+- **Forward** — press `f` to forward one message or a visual selection to any chat
+- **Delete** — `dd`/`dm` delete for yourself, `da` delete for everyone
 - **Yank / paste** — `yy` yanks a message text into an internal register, `p` pastes
   it into the compose input
 - **Archive filter** — archived chats are hidden by default;
   `:set showarchive` / `:set noshowarchive` to toggle
 - **Full chat list** — all your dialogs, sorted by last message, fully paginated
-- **Message history** — `[HH:MM] Sender` headers, reply chains, word-wrap,
-  infinite scroll-back
+- **Message history** — `[HH:MM] Sender` headers, reply chains, forward hints,
+  word-wrap, infinite scroll-back
 - **Presence** — `(online)` / `(offline)` / `(typing...)` next to a DM's name
 - **Real-time updates** — incoming messages land instantly, dialogs re-sort live
 - **Persistent session** — log in once; session cached in `session.json`
@@ -96,73 +99,8 @@ TG_APP_HASH=your_hash_here
 On first launch you'll be asked for your phone number, the login code Telegram sends
 you, and your 2FA password (if enabled). After that the session is cached.
 
-### Chat list
-
-| Key           | Action                           |
-| ------------- | -------------------------------- |
-| `j` / `k`     | Move cursor down / up            |
-| `g` / `G`     | First / last chat                |
-| `enter`       | Open selected chat as a buffer   |
-
-### Chat view — NORMAL mode
-
-| Key                          | Action                          |
-| ---------------------------- | ------------------------------- |
-| `j` / `k`                    | Move cursor down / up           |
-| `h` / `l`                    | Move cursor left / right        |
-| `ctrl+u` / `ctrl+d`          | Half-page up / down             |
-| `g` / `G`                    | Oldest / newest message         |
-| `a` / `i`                    | Enter INSERT mode               |
-| `r`                          | Reply to message under cursor   |
-| `e`                          | Edit message under cursor       |
-| `dd` / `dm`                  | Delete message (for me)         |
-| `da`                         | Delete message (for everyone)   |
-| `yy`                         | Yank message text to register   |
-| `p`                          | Paste register into input       |
-
-### Chat view — INSERT mode
-
-| Key     | Action                          |
-| ------- | ------------------------------- |
-| `enter` | Send message (or submit edit)   |
-| `esc`   | Back to NORMAL; if a draft exists and you have unsaved changes, confirms discard |
-
-### Buffers
-
-| Command                  | Action                                             |
-| ------------------------ | -------------------------------------------------- |
-| `:ls` / `:buffers`       | List loaded buffers (`%` current, `#` alternate)   |
-| `:b N`                   | Switch to buffer N                                 |
-| `:b#`                    | Switch to alternate buffer                         |
-| `:bn` / `:bp`            | Next / previous buffer                             |
-| `:bd [N]`                | Delete buffer N (current if omitted)               |
-| `:chats`                 | Switch to the chat list                            |
-
-### Windows
-
-| Command / Key        | Action                                             |
-| -------------------- | -------------------------------------------------- |
-| `:vs [arg]`          | Vertical split (arg: buffer id or `chats`)         |
-| `<C-w>h` / `<C-w>l` | Focus left / right window                          |
-| `<C-w>w`             | Cycle focus                                        |
-| `:close`             | Close focused window                               |
-
-### Settings
-
-| Command                  | Action                          |
-| ------------------------ | ------------------------------- |
-| `:set showarchive`       | Show archived chats in the list |
-| `:set noshowarchive`     | Hide archived chats (default)   |
-
-### Quitting
-
-- `:q` — close the focused window; quit if it is the last one
-- `:qa` / `:wq` — quit from anywhere
-
-### Help
-
-Type `:help` (or `:h`) at any time to open a scrollable command reference inside
-a read-only buffer. Close it with `:bd` or `:q`.
+For a full key reference see [docs/cheatsheet.md](docs/cheatsheet.md), or type
+`:help` inside the app.
 
 ## License
 
