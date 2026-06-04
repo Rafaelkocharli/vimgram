@@ -77,6 +77,9 @@ type Model struct {
 	pendingMark bool // true after "m", awaiting the mark letter
 	pendingJump bool // true after "'", awaiting the mark letter
 
+	// Count prefix for motions: accumulated digit string, e.g. "10" before "j".
+	countBuf string
+
 	// Channels and shared state
 	promptAnswers chan string
 	err           error

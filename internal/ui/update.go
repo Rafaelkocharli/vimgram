@@ -190,33 +190,52 @@ func (m Model) updateChatList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateVisualMode(msg)
 	}
 	w := m.activeWindow()
-	switch msg.String() {
+	key := msg.String()
+
+	// Accumulate numeric prefix (e.g. "10" before "j").
+	if isDigitKey(key) {
+		m.countBuf += key
+		return m, nil
+	}
+
+	switch key {
+	case "esc":
+		m.countBuf = ""
 	case ":":
+		m.countBuf = ""
 		m.enterCommandMode()
 		return m, nil
 	case "v":
+		m.countBuf = ""
 		m.vimMode = app.ModeVisual
 		return m, nil
 	case "up", "k":
-		m.moveCursor(-1)
+		m.moveCursor(-m.consumeCount())
 	case "down", "j":
-		m.moveCursor(1)
+		m.moveCursor(m.consumeCount())
 	case "g", "home":
+		m.countBuf = ""
 		w.cursor = 0
 		w.listOffset = 0
 	case "G", "end":
+		m.countBuf = ""
 		w.cursor = len(m.visibleDialogs()) - 1
 		m.adjustListOffset()
 	case "H":
+		m.countBuf = ""
 		w.cursor = w.listOffset
 	case "L":
+		m.countBuf = ""
 		last := w.listOffset + m.visibleRows() - 1
 		if max := len(m.visibleDialogs()) - 1; last > max {
 			last = max
 		}
 		w.cursor = last
 	case "enter":
+		m.countBuf = ""
 		return m.openSelectedChat()
+	default:
+		m.countBuf = ""
 	}
 	return m, nil
 }
@@ -299,23 +318,34 @@ func (m Model) updateVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Accumulate numeric prefix in Visual mode too.
+	if isDigitKey(msg.String()) && !m.pendingVisualDelete {
+		m.countBuf += msg.String()
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "esc":
+		m.countBuf = ""
 		m.vimMode = app.ModeNormal
 	case "j", "down":
-		m.moveMsgCursor(1)
+		m.moveMsgCursor(m.consumeCount())
 	case "k", "up":
-		m.moveMsgCursor(-1)
+		m.moveMsgCursor(-m.consumeCount())
 	case "ctrl+u", "pgup":
-		m.moveMsgCursor(-(height / 2))
+		n := m.consumeCount()
+		m.moveMsgCursor(-(height / 2 * n))
 	case "ctrl+d", "pgdown":
-		m.moveMsgCursor(height / 2)
+		n := m.consumeCount()
+		m.moveMsgCursor(height / 2 * n)
 	case "g", "home":
+		m.countBuf = ""
 		total := len(m.chatLines(b, w.width))
 		w.msgCursor = 0
 		w.colCursor = 0
 		w.lineOffset = clampMin(total-height, 0)
 	case "G", "end":
+		m.countBuf = ""
 		m.chatCursorToBottom(b, w)
 	case "H":
 		total := len(m.chatLines(b, w.width))
@@ -435,6 +465,14 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	w := m.activeWindow()
 	b := m.activeBuffer()
 	readOnly := b.kind == bufHelp
+	key := msg.String()
+
+	// Accumulate numeric prefix — but only when no chord is pending, so "2da"
+	// doesn't misfire. Digits are consumed by the next motion key.
+	if isDigitKey(key) && !m.pendingYank && !m.pendingDelete && !m.pendingMark && !m.pendingJump {
+		m.countBuf += key
+		return m, nil
+	}
 
 	// Handle second key of "y" chord.
 	if m.pendingYank {
@@ -499,8 +537,9 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch msg.String() {
+	switch key {
 	case "esc":
+		m.countBuf = ""
 		draft := strings.TrimSpace(m.msgInput.Value())
 		if draft != "" {
 			m.discardPrompt = true
@@ -588,18 +627,21 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.msgInput.Focus()
 		return m, textinput.Blink
 	case "k", "up":
-		if cmd := m.moveMsgCursor(-1); cmd != nil {
+		if cmd := m.moveMsgCursor(-m.consumeCount()); cmd != nil {
 			return m, cmd
 		}
 	case "j", "down":
-		m.moveMsgCursor(1)
+		m.moveMsgCursor(m.consumeCount())
 	case "pgup", "ctrl+u":
-		if cmd := m.moveMsgCursor(-(height / 2)); cmd != nil {
+		n := m.consumeCount()
+		if cmd := m.moveMsgCursor(-(height / 2 * n)); cmd != nil {
 			return m, cmd
 		}
 	case "pgdown", "ctrl+d":
-		m.moveMsgCursor(height / 2)
+		n := m.consumeCount()
+		m.moveMsgCursor(height / 2 * n)
 	case "g", "home":
+		m.countBuf = ""
 		total := len(m.chatLines(b, w.width))
 		w.msgCursor = 0
 		w.colCursor = 0
@@ -608,9 +650,10 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	case "G", "end":
+		m.countBuf = ""
 		m.chatCursorToBottom(b, w)
 	case "H":
-		// Jump to the top line of the visible viewport.
+		m.countBuf = ""
 		total := len(m.chatLines(b, w.width))
 		top := total - w.lineOffset - height
 		if top < 0 {
@@ -619,7 +662,7 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		w.msgCursor = top
 		w.colCursor = 0
 	case "L":
-		// Jump to the bottom line of the visible viewport.
+		m.countBuf = ""
 		total := len(m.chatLines(b, w.width))
 		bot := total - w.lineOffset - 1
 		if bot < 0 {
@@ -630,6 +673,8 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		w.msgCursor = bot
 		w.colCursor = 0
+	default:
+		m.countBuf = ""
 	}
 	return m, nil
 }
@@ -1393,6 +1438,26 @@ func clampMin(v, min int) int {
 		return min
 	}
 	return v
+}
+
+// consumeCount reads m.countBuf as an integer multiplier (default 1) and
+// clears it. Call before any motion that should respect a numeric prefix.
+func (m *Model) consumeCount() int {
+	s := m.countBuf
+	m.countBuf = ""
+	if s == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
+// isDigitKey reports whether key is a single ASCII digit (0-9).
+func isDigitKey(key string) bool {
+	return len(key) == 1 && key[0] >= '0' && key[0] <= '9'
 }
 
 func trimLastRune(s string) string {
