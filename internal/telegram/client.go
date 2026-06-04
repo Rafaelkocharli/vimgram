@@ -71,21 +71,28 @@ type (
 		MsgID   int
 		Err     error
 	}
+	// EventMediaDownloaded fires when a media download completes (success or failure).
+	EventMediaDownloaded struct {
+		MsgID int    // message the media belongs to
+		Path  string // local path on success
+		Err   error
+	}
 	// EventError signals a non-fatal background error.
 	EventError struct{ Err error }
 )
 
-func (EventConnected) isEvent()        {}
-func (EventDialogsLoaded) isEvent()    {}
-func (EventMessagesLoaded) isEvent()   {}
+func (EventConnected) isEvent()         {}
+func (EventDialogsLoaded) isEvent()     {}
+func (EventMessagesLoaded) isEvent()    {}
 func (EventMessagesPrepended) isEvent() {}
-func (EventMessageSent) isEvent()      {}
-func (EventMessageReceived) isEvent()  {}
-func (EventMessageEdited) isEvent()   {}
-func (EventMessageDeleted) isEvent()  {}
-func (EventUserStatus) isEvent()      {}
-func (EventUserTyping) isEvent()       {}
-func (EventError) isEvent()            {}
+func (EventMessageSent) isEvent()       {}
+func (EventMessageReceived) isEvent()   {}
+func (EventMessageEdited) isEvent()     {}
+func (EventMessageDeleted) isEvent()    {}
+func (EventUserStatus) isEvent()        {}
+func (EventUserTyping) isEvent()        {}
+func (EventMediaDownloaded) isEvent()   {}
+func (EventError) isEvent()             {}
 
 // Client is the high-level Telegram facade used by the UI.
 type Client struct {
@@ -148,6 +155,12 @@ func (c *Client) DeleteMessages(peer app.PeerRef, msgIDs []int, revoke bool) {
 	c.requests <- deleteMsgReq{peer: peer.(tg.InputPeerClass), msgIDs: msgIDs, revoke: revoke}
 }
 
+// DownloadMedia queues a media download. The result is delivered via
+// EventMediaDownloaded. destPath is the full local path to write the file to.
+func (c *Client) DownloadMedia(msgID int, media app.Media, destPath string) {
+	c.requests <- downloadMediaReq{msgID: msgID, media: media, destPath: destPath}
+}
+
 // EditMessage queues an edit of an existing message.
 func (c *Client) EditMessage(peer app.PeerRef, msgID int, newText string) {
 	c.requests <- editMsgReq{peer: peer.(tg.InputPeerClass), msgID: msgID, newText: newText}
@@ -192,6 +205,11 @@ type (
 		srcPeer tg.InputPeerClass
 		dstPeer tg.InputPeerClass
 		msgIDs  []int
+	}
+	downloadMediaReq struct {
+		msgID    int
+		media    app.Media
+		destPath string
 	}
 )
 
@@ -296,6 +314,9 @@ func (c *Client) handleRequest(ctx context.Context, tgc *telegram.Client, req an
 		if err := forwardMessages(ctx, tgc, r.srcPeer, r.dstPeer, r.msgIDs); err != nil {
 			c.emit(EventError{Err: err})
 		}
+	case downloadMediaReq:
+		path, err := downloadMedia(ctx, tgc, r.media, r.destPath)
+		c.emit(EventMediaDownloaded{MsgID: r.msgID, Path: path, Err: err})
 	}
 }
 

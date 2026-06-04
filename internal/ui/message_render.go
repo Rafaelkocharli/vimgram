@@ -78,8 +78,18 @@ func renderMessageBlock(cur app.Message, chatName, selfName string, width int, w
 	}
 
 	avail := clampMin(width, minBodyWidth)
-	for _, chunk := range wrapText(bodyOrPlaceholder(cur.Text), avail) {
-		lines = append(lines, msgTextStyle.Render(chunk))
+	if cur.Media.Kind != app.MediaNone {
+		label := cur.Media.Label()
+		lines = append(lines, mediaStyle.Render(truncRunes(label, avail)))
+		if cur.Text != "" {
+			for _, chunk := range wrapText(cur.Text, avail) {
+				lines = append(lines, msgTextStyle.Render(chunk))
+			}
+		}
+	} else {
+		for _, chunk := range wrapText(bodyOrPlaceholder(cur.Text), avail) {
+			lines = append(lines, msgTextStyle.Render(chunk))
+		}
 	}
 	return lines
 }

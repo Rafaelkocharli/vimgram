@@ -56,6 +56,9 @@ var (
 	statusTypingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffd75f"))
 	statusOfflineStyle = lipgloss.NewStyle().Faint(true)
 
+	// Media attachment line — yellow, to distinguish from plain text.
+	mediaStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#d7af00"))
+
 	// Visual selection highlight (Visual mode): slightly brighter than cursor line.
 	visualSelStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("#3a3a5c")).

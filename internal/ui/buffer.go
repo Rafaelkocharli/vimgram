@@ -40,6 +40,8 @@ type buffer struct {
 
 	marks      map[rune]int // vim marks: letter → msgCursor index
 
+	downloadingMsgID int // 0 = none; >0 = media download in progress for this msg
+
 	msgVersion int
 	cache      *chatCache
 

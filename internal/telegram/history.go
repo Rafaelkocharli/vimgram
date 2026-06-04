@@ -87,8 +87,8 @@ func buildMessage(mm *tg.Message, users map[int64]*tg.User, channels map[int64]*
 		Date:      time.Unix(int64(mm.Date), 0),
 		NameColor: -1,
 	}
-	if m.Text == "" {
-		m.Text = "[media]"
+	if rawMedia, ok := mm.GetMedia(); ok {
+		m.Media = parseMedia(rawMedia)
 	}
 	if from, ok := mm.GetFromID(); ok {
 		if pu, ok := from.(*tg.PeerUser); ok {
@@ -144,6 +144,99 @@ func snippet(s string) string {
 		return string(r[:max])
 	}
 	return t
+}
+
+// parseMedia extracts domain Media metadata from a raw Telegram media object.
+func parseMedia(raw tg.MessageMediaClass) app.Media {
+	switch m := raw.(type) {
+	case *tg.MessageMediaPhoto:
+		photo, ok := m.Photo.(*tg.Photo)
+		if !ok {
+			return app.Media{Kind: app.MediaPhoto}
+		}
+		med := app.Media{
+			Kind:   app.MediaPhoto,
+			FileID: photo.ID,
+		}
+		// Pick the largest PhotoSize for dimensions.
+		for _, s := range photo.Sizes {
+			if ps, ok := s.(*tg.PhotoSize); ok {
+				if ps.W > med.Width {
+					med.Width = ps.W
+					med.Height = ps.H
+				}
+			}
+			if ps, ok := s.(*tg.PhotoSizeProgressive); ok {
+				if ps.W > med.Width {
+					med.Width = ps.W
+					med.Height = ps.H
+				}
+			}
+		}
+		med.MimeType = "image/jpeg"
+		med.Location = &tg.InputPhotoFileLocation{
+			ID:            photo.ID,
+			AccessHash:    photo.AccessHash,
+			FileReference: photo.FileReference,
+			ThumbSize:     "y", // large thumbnail
+		}
+		return med
+
+	case *tg.MessageMediaDocument:
+		doc, ok := m.Document.(*tg.Document)
+		if !ok {
+			return app.Media{Kind: app.MediaFile}
+		}
+		med := app.Media{
+			FileID:   doc.ID,
+			MimeType: doc.MimeType,
+			FileSize: doc.Size,
+			Location: &tg.InputDocumentFileLocation{
+				ID:            doc.ID,
+				AccessHash:    doc.AccessHash,
+				FileReference: doc.FileReference,
+			},
+		}
+		// Determine kind and attributes from DocumentAttribute list.
+		isAnimated := false
+		isSticker := false
+		for _, attr := range doc.Attributes {
+			switch a := attr.(type) {
+			case *tg.DocumentAttributeVideo:
+				if a.RoundMessage {
+					med.Kind = app.MediaVideo // round video (circle)
+				} else {
+					med.Kind = app.MediaVideo
+				}
+				med.DurationS = int(a.Duration)
+				med.Width = a.W
+				med.Height = a.H
+			case *tg.DocumentAttributeAudio:
+				if a.Voice {
+					med.Kind = app.MediaVoice
+				} else {
+					med.Kind = app.MediaAudio
+				}
+				med.DurationS = a.Duration
+			case *tg.DocumentAttributeAnimated:
+				isAnimated = true
+			case *tg.DocumentAttributeSticker:
+				isSticker = true
+			case *tg.DocumentAttributeFilename:
+				med.FileName = a.FileName
+			}
+		}
+		if isSticker {
+			med.Kind = app.MediaSticker
+		} else if isAnimated && med.Kind == app.MediaNone {
+			med.Kind = app.MediaGIF
+		}
+		if med.Kind == app.MediaNone {
+			med.Kind = app.MediaFile
+		}
+		return med
+	}
+	return app.Media{}
 }
 
 func reverse(m []app.Message) {

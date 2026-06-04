@@ -449,11 +449,17 @@ func (m Model) chatInputLine(b *buffer, focused bool) string {
 	if focused && m.discardPrompt {
 		return errorStyle.Render("No write since last change. Discard draft? [y/N]")
 	}
+	if focused && m.deleteCachePrompt {
+		return errorStyle.Render("Delete cached file? [y/N]")
+	}
 	if focused && m.deletePrompt {
 		if m.deleteRevoke {
 			return errorStyle.Render("Delete message for everyone? [y/N]")
 		}
 		return errorStyle.Render("Delete message? [y/N]")
+	}
+	if b.downloadingMsgID != 0 {
+		return m.spin.View() + dimStyle.Render(" Downloading media...")
 	}
 	if focused && m.vimMode == app.ModeEdit {
 		return m.msgInput.View()

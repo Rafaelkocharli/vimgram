@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"vimgram/internal/app"
+	"vimgram/internal/mediacache"
 	"vimgram/internal/telegram"
 )
 
@@ -68,6 +69,13 @@ type Model struct {
 	deletePrompt  bool
 	deleteRevoke  bool
 
+	// Delete-cache confirmation: shown when dd is pressed on a media message.
+	deleteCachePrompt bool
+	deleteCachePath   string // the local file to remove if confirmed
+
+	// cacheDir is resolved once at startup and reused for all media operations.
+	cacheDir string
+
 	// Unnamed yank register — holds the last yanked message text (yy).
 	// Not connected to the system clipboard.
 	pendingYank bool   // true after "y", awaiting second "y"
@@ -110,6 +118,11 @@ func NewModel(client *telegram.Client, cancel context.CancelFunc, answers chan s
 	sp.Spinner = spinner.Dot
 
 	store := newBufferStore()
+
+	// Resolve the media cache directory once; ignore errors (media features
+	// will gracefully degrade if the dir can't be created).
+	cacheDir, _ := mediacache.Dir()
+
 	return Model{
 		client:        client,
 		cancel:        cancel,
@@ -123,6 +136,7 @@ func NewModel(client *telegram.Client, cancel context.CancelFunc, answers chan s
 		buffers:       store,
 		wins:          []*window{{bufferID: chatListBufferID}},
 		focused:       0,
+		cacheDir:      cacheDir,
 	}
 }
 

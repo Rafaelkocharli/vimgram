@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"vimgram/internal/app"
+	"vimgram/internal/mediacache"
 	"vimgram/internal/telegram"
 )
 
@@ -91,6 +92,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Confirmations take priority over everything else.
 	if m.discardPrompt {
 		return m.handleDiscardPrompt(msg)
+	}
+	if m.deleteCachePrompt {
+		return m.handleDeleteCachePrompt(msg)
 	}
 	if m.deletePrompt {
 		return m.handleDeletePrompt(msg)
@@ -477,9 +481,16 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle second key of "y" chord.
 	if m.pendingYank {
 		m.pendingYank = false
-		if msg.String() == "y" {
+		if key == "y" {
 			if cm := m.cursorMessage(b, w); cm != nil {
-				m.yankReg = cm.Text
+				if cm.Media.Kind != app.MediaNone {
+					// Yank local cache path for media messages.
+					if path := m.mediaCachePath(cm); path != "" {
+						m.yankReg = path
+					}
+				} else {
+					m.yankReg = cm.Text
+				}
 			}
 		}
 		return m, nil
@@ -488,17 +499,27 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle second key of "d" chord.
 	if m.pendingDelete {
 		m.pendingDelete = false
-		switch msg.String() {
+		cm := m.cursorMessage(b, w)
+		if cm == nil {
+			return m, nil
+		}
+		// Media messages: dd/dm deletes local cache; da is not applicable.
+		if cm.Media.Kind != app.MediaNone {
+			if key == "m" || key == "d" {
+				if path := m.mediaCachePath(cm); path != "" && mediacache.Exists(path) {
+					m.deleteCachePrompt = true
+					m.deleteCachePath = path
+				}
+			}
+			return m, nil
+		}
+		switch key {
 		case "m", "d":
-			if cm := m.cursorMessage(b, w); cm != nil {
-				m.deleteRevoke = false
-				m.deletePrompt = true
-			}
+			m.deleteRevoke = false
+			m.deletePrompt = true
 		case "a":
-			if cm := m.cursorMessage(b, w); cm != nil {
-				m.deleteRevoke = true
-				m.deletePrompt = true
-			}
+			m.deleteRevoke = true
+			m.deletePrompt = true
 		}
 		return m, nil
 	}
@@ -547,6 +568,11 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		b.replyToID = 0
 		b.replyToPreview = ""
+		return m, nil
+	case "o":
+		if cm := m.cursorMessage(b, w); cm != nil && cm.Media.Kind != app.MediaNone {
+			return m.openMedia(b, cm)
+		}
 		return m, nil
 	case "y":
 		if !readOnly && m.cursorMessage(b, w) != nil {
@@ -889,6 +915,44 @@ func (m Model) handleForwardOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// ----- Media open / cache delete ------------------------------------------
+
+// openMedia opens the media attached to msg. If the file is already cached it
+// is opened immediately; otherwise a download is queued and the file will be
+// opened when EventMediaDownloaded fires.
+func (m Model) openMedia(b *buffer, msg *app.Message) (tea.Model, tea.Cmd) {
+	if m.cacheDir == "" {
+		return m, nil
+	}
+	path := mediacache.Path(m.cacheDir, msg.Media.FileID, msg.Media.Ext())
+	if mediacache.Exists(path) {
+		return m, openMediaFile(path)
+	}
+	// Start download; show spinner via downloadingMsgID.
+	b.downloadingMsgID = msg.ID
+	msgID := msg.ID
+	media := msg.Media
+	client := m.client
+	return m, func() tea.Msg {
+		client.DownloadMedia(msgID, media, path)
+		return nil
+	}
+}
+
+// handleDeleteCachePrompt handles the y/N answer to "Delete cached file?".
+func (m Model) handleDeleteCachePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.deleteCachePrompt = false
+	path := m.deleteCachePath
+	m.deleteCachePath = ""
+	if msg.String() != "y" && msg.String() != "Y" {
+		return m, nil
+	}
+	return m, func() tea.Msg {
+		_ = mediacache.Delete(path)
+		return nil
+	}
 }
 
 // ----- Delete confirmation ------------------------------------------------
@@ -1244,6 +1308,20 @@ func (m Model) handleTelegramEvent(e telegram.Event) (tea.Model, tea.Cmd) {
 	case telegram.EventUserTyping:
 		m.typingUntil[ev.UserID] = time.Now().Add(typingTTL)
 		return m, nil
+	case telegram.EventMediaDownloaded:
+		if ev.Err != nil {
+			m.err = ev.Err
+			return m, nil
+		}
+		// Clear the per-buffer downloading indicator.
+		for _, b := range m.buffers.list {
+			if b.downloadingMsgID == ev.MsgID {
+				b.downloadingMsgID = 0
+				break
+			}
+		}
+		// Open the file now that it has landed on disk.
+		return m, openMediaFile(ev.Path)
 	case telegram.EventError:
 		m.err = ev.Err
 		return m, nil
@@ -1380,6 +1458,23 @@ func findMessageByID(msgs []app.Message, id int) *app.Message {
 
 // previewSnippet shortens a message body for a single-line "replies to ..."
 // hint, matching what the telegram layer produces for messages loaded as a page.
+// mediaCachePath returns the local cache path for msg's media, or "" if the
+// message has no media or the cache dir is unavailable.
+func (m *Model) mediaCachePath(msg *app.Message) string {
+	if msg == nil || msg.Media.Kind == app.MediaNone || m.cacheDir == "" {
+		return ""
+	}
+	return mediacache.Path(m.cacheDir, msg.Media.FileID, msg.Media.Ext())
+}
+
+// openMediaFile opens path with the OS default application (non-blocking).
+func openMediaFile(path string) tea.Cmd {
+	return func() tea.Msg {
+		openWithOS(path)
+		return nil
+	}
+}
+
 func previewSnippet(text string) string {
 	t := singleLine(text)
 	if t == "" {
