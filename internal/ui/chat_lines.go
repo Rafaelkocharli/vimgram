@@ -77,7 +77,9 @@ func (m Model) historyTopLine(b *buffer) string {
 
 // chatViewport returns exactly chatBodyHeight lines for a window's message
 // area, bottom-anchored, padding the top when content is short.
-func (m Model) chatViewport(b *buffer, w *window, width int) []string {
+// selLo/selHi are the inclusive chatLines indices of the visual selection;
+// pass selLo > selHi (e.g. -1, -1) to disable selection highlighting.
+func (m Model) chatViewport(b *buffer, w *window, width, selLo, selHi int) []string {
 	all := m.chatLines(b, width)
 	height := m.chatBodyHeight()
 	total := len(all)
@@ -99,9 +101,18 @@ func (m Model) chatViewport(b *buffer, w *window, width int) []string {
 		top = 0
 	}
 	for i, line := range all[top:bottom] {
-		if top+i == w.msgCursor {
+		idx := top + i
+		switch {
+		case idx == w.msgCursor:
 			out = append(out, renderCursorLine(line, w.colCursor, width))
-		} else {
+		case selLo <= idx && idx <= selHi:
+			plain := ansi.Strip(line)
+			runes := []rune(plain)
+			for len(runes) < width {
+				runes = append(runes, ' ')
+			}
+			out = append(out, visualSelStyle.Render(string(runes)))
+		default:
 			out = append(out, line)
 		}
 	}

@@ -131,18 +131,21 @@ func (c *Client) LoadMore(peer app.PeerRef, beforeID int) {
 
 // SendMessage queues an outgoing message to peer. Pass replyToMsgID > 0 to
 // send as a reply to an existing message.
-// ForwardMessage forwards a message from srcPeer to dstPeer.
-func (c *Client) ForwardMessage(srcPeer app.PeerRef, dstPeer app.PeerRef, msgID int) {
+
+// ForwardMessages forwards one or more messages from srcPeer to dstPeer in a
+// single API call.
+func (c *Client) ForwardMessages(srcPeer app.PeerRef, dstPeer app.PeerRef, msgIDs []int) {
 	c.requests <- forwardMsgReq{
 		srcPeer: srcPeer.(tg.InputPeerClass),
 		dstPeer: dstPeer.(tg.InputPeerClass),
-		msgID:   msgID,
+		msgIDs:  msgIDs,
 	}
 }
 
-// DeleteMessage queues deletion of a message. revoke=true deletes for everyone.
-func (c *Client) DeleteMessage(peer app.PeerRef, msgID int, revoke bool) {
-	c.requests <- deleteMsgReq{peer: peer.(tg.InputPeerClass), msgID: msgID, revoke: revoke}
+// DeleteMessages queues deletion of one or more messages. revoke=true deletes
+// for everyone.
+func (c *Client) DeleteMessages(peer app.PeerRef, msgIDs []int, revoke bool) {
+	c.requests <- deleteMsgReq{peer: peer.(tg.InputPeerClass), msgIDs: msgIDs, revoke: revoke}
 }
 
 // EditMessage queues an edit of an existing message.
@@ -182,13 +185,13 @@ type (
 	}
 	deleteMsgReq struct {
 		peer   tg.InputPeerClass
-		msgID  int
+		msgIDs []int
 		revoke bool // true = delete for everyone
 	}
 	forwardMsgReq struct {
 		srcPeer tg.InputPeerClass
 		dstPeer tg.InputPeerClass
-		msgID   int
+		msgIDs  []int
 	}
 )
 
@@ -285,10 +288,12 @@ func (c *Client) handleRequest(ctx context.Context, tgc *telegram.Client, req an
 		err := editMessage(ctx, tgc, r.peer, r.msgID, r.newText)
 		c.emit(EventMessageEdited{PeerKey: InputPeerKey(r.peer), MsgID: r.msgID, NewText: r.newText, Err: err})
 	case deleteMsgReq:
-		err := deleteMessage(ctx, tgc, r.msgID, r.revoke)
-		c.emit(EventMessageDeleted{PeerKey: InputPeerKey(r.peer), MsgID: r.msgID, Err: err})
+		for _, id := range r.msgIDs {
+			err := deleteMessage(ctx, tgc, id, r.revoke)
+			c.emit(EventMessageDeleted{PeerKey: InputPeerKey(r.peer), MsgID: id, Err: err})
+		}
 	case forwardMsgReq:
-		if err := forwardMessage(ctx, tgc, r.srcPeer, r.dstPeer, r.msgID); err != nil {
+		if err := forwardMessages(ctx, tgc, r.srcPeer, r.dstPeer, r.msgIDs); err != nil {
 			c.emit(EventError{Err: err})
 		}
 	}
@@ -340,13 +345,17 @@ func deleteMessage(ctx context.Context, tgc *telegram.Client, msgID int, revoke 
 	return nil
 }
 
-// forwardMessage forwards a single message from srcPeer to dstPeer.
-func forwardMessage(ctx context.Context, tgc *telegram.Client, srcPeer, dstPeer tg.InputPeerClass, msgID int) error {
+// forwardMessages forwards one or more messages from srcPeer to dstPeer.
+func forwardMessages(ctx context.Context, tgc *telegram.Client, srcPeer, dstPeer tg.InputPeerClass, msgIDs []int) error {
+	randomIDs := make([]int64, len(msgIDs))
+	for i := range randomIDs {
+		randomIDs[i] = rand.Int63()
+	}
 	_, err := tgc.API().MessagesForwardMessages(ctx, &tg.MessagesForwardMessagesRequest{
 		FromPeer: srcPeer,
 		ToPeer:   dstPeer,
-		ID:       []int{msgID},
-		RandomID: []int64{rand.Int63()},
+		ID:       msgIDs,
+		RandomID: randomIDs,
 	})
 	if err != nil {
 		return fmt.Errorf("forward: %w", err)

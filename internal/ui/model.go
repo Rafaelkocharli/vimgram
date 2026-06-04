@@ -33,11 +33,16 @@ type Model struct {
 	overlay      []string // non-empty => :ls buffer-list overlay is shown
 
 	// Forward overlay: shown when the user presses f on a message.
-	forwardActive bool
+	forwardActive  bool
 	forwardSrcPeer app.PeerRef
-	forwardMsgID   int
+	forwardMsgIDs  []int  // message IDs to forward (one or many)
+	forwardMsgText string // text of the first source message, for the preview snippet
 	forwardCursor  int
 	forwardOffset  int
+
+	// Visual mode selection anchor (chat view only).
+	visualAnchor       int  // msgCursor position where v was pressed
+	pendingVisualDelete bool // waiting for m/d/a after d in visual mode
 
 	// Self + dialog list (global Telegram state, rendered by the Chats buffer).
 	self        app.Self

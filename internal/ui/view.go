@@ -420,7 +420,15 @@ func (m Model) chatBody(b *buffer, w *window, width int) []string {
 	if len(m.chatLines(b, width)) == 0 {
 		return m.padBody([]string{dimStyle.Render("(empty)")})
 	}
-	return m.chatViewport(b, w, width)
+	selLo, selHi := -1, -1
+	if m.vimMode == app.ModeVisual && b == m.activeBuffer() {
+		selLo = m.visualAnchor
+		selHi = w.msgCursor
+		if selLo > selHi {
+			selLo, selHi = selHi, selLo
+		}
+	}
+	return m.chatViewport(b, w, width, selLo, selHi)
 }
 
 // chatNames returns the chat title and the user's own display name for a buffer.

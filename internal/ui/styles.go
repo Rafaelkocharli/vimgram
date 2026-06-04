@@ -56,8 +56,12 @@ var (
 	statusTypingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffd75f"))
 	statusOfflineStyle = lipgloss.NewStyle().Faint(true)
 
-	// Chat cursor line (Normal mode): full-line background, and a block
-	// cursor character on the active column.
+	// Visual selection highlight (Visual mode): slightly brighter than cursor line.
+	visualSelStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#3a3a5c")).
+			Foreground(lipgloss.Color("#ffffff"))
+
+	// Chat cursor line (Normal mode): full-line background.
 	cursorLineStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("#2d2d4a")).
 			Foreground(lipgloss.Color("#e0e0e0"))

@@ -272,14 +272,162 @@ func (m Model) updateChat(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// updateVisualMode handles VISUAL mode. It currently has no selection
-// behaviour yet — only entering (via "v" from NORMAL) and leaving (esc), as in
-// vim. Shared by the chat list and chat views.
+// updateVisualMode handles VISUAL mode in a chat buffer. j/k extend the
+// selection; y/r/d/f operate on all selected messages.
 func (m Model) updateVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "esc" {
+	// Visual mode in the chat list is a no-op except for esc.
+	if m.activeBuffer().kind == bufChatList {
+		if msg.String() == "esc" {
+			m.vimMode = app.ModeNormal
+		}
+		return m, nil
+	}
+
+	b := m.activeBuffer()
+	w := m.activeWindow()
+	height := m.chatBodyHeight()
+
+	// Handle "d" chord second key.
+	if m.pendingVisualDelete {
+		m.pendingVisualDelete = false
+		switch msg.String() {
+		case "m", "d":
+			return m.visualDelete(false)
+		case "a":
+			return m.visualDelete(true)
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc":
+		m.vimMode = app.ModeNormal
+	case "j", "down":
+		m.moveMsgCursor(1)
+	case "k", "up":
+		m.moveMsgCursor(-1)
+	case "ctrl+u", "pgup":
+		m.moveMsgCursor(-(height / 2))
+	case "ctrl+d", "pgdown":
+		m.moveMsgCursor(height / 2)
+	case "g", "home":
+		total := len(m.chatLines(b, w.width))
+		w.msgCursor = 0
+		w.colCursor = 0
+		w.lineOffset = clampMin(total-height, 0)
+	case "G", "end":
+		m.chatCursorToBottom(b, w)
+	case "H":
+		total := len(m.chatLines(b, w.width))
+		top := total - w.lineOffset - height
+		if top < 0 {
+			top = 0
+		}
+		w.msgCursor = top
+	case "L":
+		total := len(m.chatLines(b, w.width))
+		bot := total - w.lineOffset - 1
+		if bot < 0 {
+			bot = 0
+		}
+		if bot >= total {
+			bot = total - 1
+		}
+		w.msgCursor = bot
+	case "y":
+		msgs := m.selectedMessages(b, w)
+		var texts []string
+		for _, msg := range msgs {
+			if msg.Text != "" {
+				texts = append(texts, msg.Text)
+			}
+		}
+		if len(texts) > 0 {
+			m.yankReg = strings.Join(texts, "\n")
+		}
+		m.vimMode = app.ModeNormal
+	case "r":
+		msgs := m.selectedMessages(b, w)
+		if len(msgs) > 0 {
+			last := msgs[len(msgs)-1]
+			b.replyToID = last.ID
+			b.replyToPreview = previewSnippet(last.Text)
+		}
+		m.vimMode = app.ModeNormal
+		m.msgInput.Focus()
+		return m, textinput.Blink
+	case "d":
+		if len(m.selectedMessages(b, w)) > 0 {
+			m.pendingVisualDelete = true
+		}
+	case "f":
+		msgs := m.selectedMessages(b, w)
+		if len(msgs) > 0 {
+			ids := make([]int, len(msgs))
+			for i, msg := range msgs {
+				ids[i] = msg.ID
+			}
+			m.forwardActive = true
+			m.forwardSrcPeer = b.peer
+			m.forwardMsgIDs = ids
+			m.forwardMsgText = msgs[0].Text
+			m.forwardCursor = 0
+			m.forwardOffset = 0
+		}
 		m.vimMode = app.ModeNormal
 	}
 	return m, nil
+}
+
+// selectedMessages returns the unique messages whose visual lines overlap with
+// the current visual selection [lo, hi] (inclusive, in chatLines index space).
+func (m *Model) selectedMessages(b *buffer, w *window) []app.Message {
+	lo := m.visualAnchor
+	hi := w.msgCursor
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	if len(b.messages) == 0 {
+		return nil
+	}
+	chatName, selfName := m.chatNames(b)
+	var result []app.Message
+	lineIdx := 1 // line 0 is historyTopLine
+	var prev *app.Message
+	for i := range b.messages {
+		msg := b.messages[i]
+		header := startsNewGroup(prev, msg)
+		count := len(renderMessageBlock(msg, chatName, selfName, w.width, header))
+		msgHi := lineIdx + count - 1
+		if msgHi >= lo && lineIdx <= hi {
+			result = append(result, b.messages[i])
+		}
+		lineIdx += count
+		prev = &b.messages[i]
+	}
+	return result
+}
+
+// visualDelete deletes all selected messages. revoke=true deletes for everyone.
+func (m Model) visualDelete(revoke bool) (tea.Model, tea.Cmd) {
+	b := m.activeBuffer()
+	w := m.activeWindow()
+	msgs := m.selectedMessages(b, w)
+	if len(msgs) == 0 {
+		m.vimMode = app.ModeNormal
+		return m, nil
+	}
+	ids := make([]int, len(msgs))
+	for i, msg := range msgs {
+		ids[i] = msg.ID
+	}
+	m.vimMode = app.ModeNormal
+	peer := b.peer
+	client := m.client
+	return m, func() tea.Msg {
+		client.DeleteMessages(peer, ids, revoke)
+		return nil
+	}
 }
 
 func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -396,7 +544,8 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if cm := m.cursorMessage(b, w); cm != nil {
 			m.forwardActive = true
 			m.forwardSrcPeer = b.peer
-			m.forwardMsgID = cm.ID
+			m.forwardMsgIDs = []int{cm.ID}
+			m.forwardMsgText = cm.Text
 			m.forwardCursor = 0
 			m.forwardOffset = 0
 		}
@@ -429,6 +578,7 @@ func (m Model) updateChatNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "v":
 		m.vimMode = app.ModeVisual
+		m.visualAnchor = w.msgCursor
 		return m, nil
 	case "a", "i":
 		if readOnly {
@@ -686,10 +836,10 @@ func (m Model) handleForwardOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		dest := visible[m.forwardCursor]
 		m.forwardActive = false
 		srcPeer := m.forwardSrcPeer
-		msgID := m.forwardMsgID
+		msgIDs := m.forwardMsgIDs
 		client := m.client
 		return m, func() tea.Msg {
-			client.ForwardMessage(srcPeer, dest.Peer, msgID)
+			client.ForwardMessages(srcPeer, dest.Peer, msgIDs)
 			return nil
 		}
 	}
@@ -710,12 +860,11 @@ func (m Model) handleDeletePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if cm == nil {
 		return m, nil
 	}
-	msgID := cm.ID
 	revoke := m.deleteRevoke
 	peer := b.peer
 	client := m.client
 	return m, func() tea.Msg {
-		client.DeleteMessage(peer, msgID, revoke)
+		client.DeleteMessages(peer, []int{cm.ID}, revoke)
 		return nil
 	}
 }
