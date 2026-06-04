@@ -55,10 +55,11 @@ func TestBuildMessage(t *testing.T) {
 		}
 	})
 
-	t.Run("empty text becomes media placeholder", func(t *testing.T) {
+	t.Run("empty text stays empty (media shown via Media.Label)", func(t *testing.T) {
 		mm := &tg.Message{ID: 11, Message: ""}
-		if got := buildMessage(mm, users, nil, nil); got.Text != "[media]" {
-			t.Errorf("empty message should render as [media], got %q", got.Text)
+		got := buildMessage(mm, users, nil, nil)
+		if got.Text != "" {
+			t.Errorf("empty text should stay empty, got %q", got.Text)
 		}
 	})
 
